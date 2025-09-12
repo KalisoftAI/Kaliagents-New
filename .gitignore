@@ -7,9 +7,11 @@ __pycache__/
 .env
 venv/
 *.log
+*.toml
 *.pot
 *.mo
 *.py[cod]
 media/
 staticfiles/
 client_secret.json
+secrete.toml
