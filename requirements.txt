@@ -1,0 +1,8 @@
+Django
+yt-dlp
+moviepy
+google-generativeai
+webvtt-py
+google-api-python-client
+google-auth-oauthlib
+gunicorn
