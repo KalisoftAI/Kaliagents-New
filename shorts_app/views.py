@@ -11,6 +11,7 @@ import webvtt
 import csv
 import io
 from urllib.parse import urlparse, parse_qs
+from . import youtube_service
 
 from django.shortcuts import render, get_object_or_404
 from django.conf import settings
@@ -86,6 +87,40 @@ def log_to_csv(full_transcript: str, ai_transcripts: list, output_link: str, fee
         logger.info(f"Appended a new row to {csv_file_path}")
 
 
+def post_to_youtube(request, short_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+
+    try:
+        # 1. Get the GeneratedShort object from the database
+        short = get_object_or_404(GeneratedShort, id=short_id)
+
+        # 2. Construct the full, absolute path to the video file
+        video_full_path = os.path.join(settings.BASE_DIR, short.short_path.lstrip('/'))
+
+        # 3. Get the social media content from the short's record
+        # We use the AI-generated content if available, otherwise fall back to the original.
+        title = short.social_title or short.title
+        description = short.social_description or short.description
+        tags = short.social_hashtags or short.tags
+
+        # 4. Call the upload function from your new service file
+        result = youtube_service.upload_video(
+            file_path=video_full_path,
+            title=title,
+            description=description,
+            tags=tags,
+            privacy_status="private"  # Or "public" or "unlisted"
+        )
+
+        # 5. Return the result to the frontend
+        return JsonResponse(result)
+
+    except Exception as e:
+        logger.error(f"Error in post_to_youtube view: {e}", exc_info=True)
+        return JsonResponse({'status': 'error', 'message': f'An unexpected error occurred: {e}'}, status=500)
+
+        
 def get_ai_suggested_clips(transcript: str, video_duration: int, video_title: str):
     """
     Analyzes a video transcript to suggest relevant, contextual clips for shorts.
@@ -315,20 +350,53 @@ def generate_social_post_content(clip_title: str, clip_description: str):
     model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
-    You are a viral social media marketing expert. Your task is to create an engaging social media post for a short video clip.
+You are an expert viral social media marketing strategist with proven experience creating content that achieves millions of views across YouTube Shorts, Instagram Reels, and TikTok. Your task is to create a compelling social media post for a short video clip that maximizes engagement and viral potential.
 
-    *Clip Context:*
-    - *Title:* "{clip_title}"
-    - *Description:* "{clip_description}"
+**Context and Requirements:**
+- Platform focus: YouTube Shorts, Instagram Reels, TikTok
+- Goal: Maximum engagement, shareability, and viral potential
+- Audience: All People ages, primarily 18-34, interested in trending and relatable content
+- Brand voice: Professional/Casual/Humorous 
 
-    *Your Task:*
-    Generate the following content for a social media post (like for YouTube Shorts, Instagram Reels, or TikTok).
+**Clip Information:**
+- Title: "{clip_title}"
+- Description: "{clip_description}"
 
-    1.  `catchy_title`: A highly engaging and clickable title. Use emojis and keep it concise.
-    2.  `engaging_description`: A well-written description that hooks the viewer, explains the video's value, and includes a call-to-action (e.g., "Follow for more!", "What do you think? Comment below!"). Use emojis to break up the text and make it visually appealing.
-    3.  `hashtags`: A JSON array of 10-15 relevant and trending hashtags. Include a mix of broad and niche tags.
+**Generate the following optimized content:**
 
-    Your response MUST be a valid JSON object with the keys "catchy_title", "engaging_description", and "hashtags", without any markdown formatting.
+1. **catchy_title**: Create a scroll-stopping, click-worthy title that:
+   - Uses power words and emotional triggers
+   - Includes numbers or "How to" when relevant
+   - Stays under 60 characters for mobile optimization
+   - Incorporates 1-2 strategic emojis
+   - Creates curiosity or promises value
+
+2. **engaging_description**: Write a compelling description that:
+   - Opens with a hook that grabs attention in the first line
+   - Explains the video's value proposition clearly
+   - Uses short, punchy sentences (max 15 words each)
+   - Includes strategic line breaks for mobile readability
+   - Incorporates a strong call-to-action
+   - Adds 2-3 relevant emojis for visual appeal
+   - Ends with an engagement question to boost comments
+
+3. **hashtags**: Provide an array of 12-15 strategic hashtags that include:
+   - 3-4 trending/broad hashtags (high volume)
+   - 4-5 niche-specific hashtags (targeted audience)
+   - 3-4 community hashtags (engagement-focused)
+   - 2-3 branded or unique hashtags
+   - Mix of popular and less competitive tags
+
+4. **best_posting_time**: Suggest optimal posting times based on platform and audience
+
+5. **engagement_strategy**: Provide 2-3 specific tactics to boost initial engagement
+
+**Output Format Requirements:**
+Respond ONLY with a valid JSON object containing these exact keys: "catchy_title", "engaging_description", "hashtags", "best_posting_time", "engagement_strategy". No markdown formatting, no additional text, no code blocks.
+
+**Success Criteria:**
+The content should be designed to achieve high watch time, strong engagement rates, and maximum shareability while maintaining authenticity and brand alignment.
+
     """
     
     cleaned_text = "" # Define here to be accessible in the exception block

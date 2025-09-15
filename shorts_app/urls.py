@@ -12,7 +12,7 @@ urlpatterns = [
     # Background task and video processing URLs
     path('process_video/', views.process_video, name='process_video'),
     path('check_progress/<str:task_id>/', views.check_progress, name='check_progress'),
-
+    path('post/youtube/<uuid:short_id>/', views.post_to_youtube, name='post_to_youtube'),
     # Short generation and management URLs
     path('generate_short/', views.generate_short, name='generate_short'),
     path('download_short/<str:filename>/', views.download_short, name='download_short'),

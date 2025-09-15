@@ -212,44 +212,6 @@
         .topic-buttons-container .btn-refresh:hover {
             background-color: #5a6268;
         }
-        /* ... at the end of your existing <style> tag ... */
-        .social-post-section {
-            margin-bottom: 1.5rem;
-            position: relative;
-            border: 1px solid var(--medium-gray);
-            border-radius: 8px;
-            padding: 1rem;
-        }
-        .social-post-section strong {
-            display: block;
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-            color: var(--primary-color);
-        }
-        .copyable-text {
-            background-color: var(--light-gray);
-            padding: 0.75rem;
-            border-radius: 6px;
-            font-size: 0.95rem;
-            color: var(--dark-gray);
-            word-wrap: break-word;
-        }
-        .btn-copy {
-            position: absolute;
-            top: 0.75rem;
-            right: 0.75rem;
-            padding: 6px 12px;
-            font-size: 0.85rem;
-            background-color: var(--secondary-color);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color var(--transition-speed);
-        }
-        .btn-copy:hover {
-            background-color: var(--dark-gray);
-        }
             /* Paste this inside your <style> tag */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -285,7 +247,6 @@
     </style>
 </head>
 <body>
-        <!-- Paste this right before the </body> tag -->
     <div id="social-modal" class="modal-overlay">
         <div class="modal-content">
             <h2>🚀 Social Post Ready!</h2>
@@ -342,7 +303,6 @@
             </div>
         </div>
 
-        <!-- New: Discover Trending Topics Section -->
         <div class="card">
             <h2>Discover Trending Topics</h2>
             <div class="topic-buttons-container">
@@ -391,9 +351,11 @@
                     <div class="short-card__content">
                         <h4>{{ short.title }}</h4>
                         <p>{{ short.description }}</p>
+                        <div id="status-{{ short.id }}" style="margin-top: 10px; font-weight: 500;"></div>
                     </div>
                     <div class="short-card__actions">
                         <a href="{% url 'shorts_app:download_short' filename=short.short_path|slice:'14:' %}" class="btn btn-secondary">Download</a>
+                        <button type="button" class="btn btn-primary" onclick="postToYouTube('{{ short.id }}')">Post</button>
                         <button type="button" class="delete-btn btn btn-danger" data-id="{{ short.id }}" data-type="short">Delete</button>
                     </div>
                 </div>
@@ -584,9 +546,7 @@
         attachCreationEventListeners(resultsContainer, data.video_id, data.suggested_clips);
     }
 
-
-
-    // --- FIX: ADD THIS MISSING FUNCTION ---
+    // --- BUG FIX: This function was missing in your original file ---
     function addShortCardToDOM(short) {
         const container = document.getElementById('generated-shorts-scroll-container');
         const placeholder = container.querySelector('.placeholder-text');
@@ -602,74 +562,108 @@
                 <div class="short-card__content">
                     <h4>${short.title}</h4>
                     <p>${short.description}</p>
+                    <div id="status-${short.id}" style="margin-top: 10px; font-weight: 500;"></div>
                 </div>
                 <div class="short-card__actions">
                     <a href="${short.download_url}" class="btn btn-secondary">Download</a>
+                    <button type="button" class="btn btn-primary" onclick="postToYouTube('${short.id}')">Post</button>
                     <button type="button" class="delete-btn btn btn-danger" data-id="${short.id}" data-type="short">Delete</button>
                 </div>
             </div>`;
         
-        container.insertAdjacentHTML('afterbegin', cardHTML); 
+        container.insertAdjacentHTML('afterbegin', cardHTML);
     }
 
-    
-    // --- REPLACE your existing handleShortGeneration function ---
-async function handleShortGeneration(payload, button) {
-    document.querySelectorAll('.generate-btn').forEach(b => b.disabled = true);
-    toggleButtonLoading(button, true);
-    showProgress('generation', true, 'Creating your short...', -1);
+    async function handleShortGeneration(payload, button) {
+        document.querySelectorAll('.generate-btn, .manual-generate-btn').forEach(b => b.disabled = true);
+        toggleButtonLoading(button, true);
+        showProgress('generation', true, 'Creating your short...', -1);
 
-    try {
-        const response = await fetch("{% url 'shorts_app:generate_short' %}", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
-            body: JSON.stringify(payload)
-        });
-        const result = await response.json();
-        if (result.status === 'success') {
-            addShortCardToDOM(result.new_short_details);
-            showSocialModal(result.new_short_details); // <-- This line shows the modal
-            document.getElementById('results-container').innerHTML = '';
-        } else {
-            throw new Error(result.message);
+        try {
+            const response = await fetch("{% url 'shorts_app:generate_short' %}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+                body: JSON.stringify(payload)
+            });
+            const result = await response.json();
+            if (result.status === 'success') {
+                addShortCardToDOM(result.new_short_details);
+                showSocialModal(result.new_short_details);
+                document.getElementById('results-container').innerHTML = '';
+            } else {
+                throw new Error(result.message);
+            }
+        } catch (error) {
+            alert(`Error creating short: ${error.message || 'An unexpected error occurred.'}`);
+        } finally {
+            toggleButtonLoading(button, false);
+            showProgress('generation', false);
+            document.querySelectorAll('.generate-btn, .manual-generate-btn').forEach(b => b.disabled = false);
         }
-    } catch (error) {
-        alert(`Error creating short: ${error.message || 'An unexpected error occurred.'}`);
-    } finally {
-        toggleButtonLoading(button, false);
-        showProgress('generation', false);
     }
-}
-// --- ADD this new logic inside your <script> tag ---
-function showSocialModal(details) {
-    document.getElementById('social-title').textContent = details.social_title || 'No title generated.';
-    document.getElementById('social-description').textContent = details.social_description || 'No description generated.';
-    document.getElementById('social-hashtags').textContent = details.social_hashtags || '#novideotags';
-    document.getElementById('social-modal').classList.add('visible');
-}
 
-document.getElementById('social-close-btn').addEventListener('click', () => {
-    document.getElementById('social-modal').classList.remove('visible');
-});
+    function showSocialModal(details) {
+        document.getElementById('social-title').textContent = details.social_title || 'No title generated.';
+        document.getElementById('social-description').textContent = details.social_description || 'No description generated.';
+        // Ensure hashtags are displayed correctly as a space-separated string
+        const hashtagsText = Array.isArray(details.social_hashtags) ? details.social_hashtags.join(' ') : (details.social_hashtags || '#novideotags');
+        document.getElementById('social-hashtags').textContent = hashtagsText;
+        document.getElementById('social-modal').classList.add('visible');
+    }
 
-document.querySelectorAll('.btn-copy').forEach(button => {
-    button.addEventListener('click', (e) => {
-        const targetId = e.target.dataset.target;
-        const textToCopy = document.getElementById(targetId).textContent;
-        
-        // Use a temporary textarea to copy the text to the clipboard
-        const tempTextarea = document.createElement('textarea');
-        tempTextarea.value = textToCopy;
-        document.body.appendChild(tempTextarea);
-        tempTextarea.select();
-        document.execCommand('copy');
-        document.body.removeChild(tempTextarea);
-
-        // Provide user feedback
-        e.target.textContent = 'Copied!';
-        setTimeout(() => { e.target.textContent = 'Copy'; }, 2000);
+    document.getElementById('social-close-btn').addEventListener('click', () => {
+        document.getElementById('social-modal').classList.remove('visible');
     });
-});
+
+    document.querySelectorAll('.btn-copy').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const targetId = e.target.dataset.target;
+            const textToCopy = document.getElementById(targetId).textContent;
+            navigator.clipboard.writeText(textToCopy).then(() => {
+                e.target.textContent = 'Copied!';
+                setTimeout(() => { e.target.textContent = 'Copy'; }, 2000);
+            });
+        });
+    });
+
+    // NEW YOUTUBE POST FUNCTION
+    function postToYouTube(shortId) {
+        const statusDiv = document.getElementById(`status-${shortId}`);
+        if (!statusDiv) return;
+
+        statusDiv.style.color = '#343a40';
+        statusDiv.innerHTML = 'Uploading to YouTube...';
+
+        const postButton = document.querySelector(`#short-card-${shortId} button[onclick^="postToYouTube"]`);
+        if(postButton) postButton.disabled = true;
+
+        fetch(`/post/youtube/${shortId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                statusDiv.style.color = 'green';
+                statusDiv.innerHTML = `✅ Uploaded! Video ID: ${data.video_id}`;
+            } else {
+                statusDiv.style.color = 'var(--danger-color)';
+                statusDiv.innerHTML = `❌ Error: ${data.message}`;
+            }
+        })
+        .catch(error => {
+            statusDiv.style.color = 'var(--danger-color)';
+            statusDiv.innerHTML = '❌ A network error occurred.';
+            console.error('Fetch Error:', error);
+        })
+        .finally(() => {
+            if(postButton) postButton.disabled = false;
+        });
+    }
+
     async function deleteItem(button) {
         const type = button.dataset.type;
         const id = button.dataset.id;
@@ -770,20 +764,16 @@ document.querySelectorAll('.btn-copy').forEach(button => {
         return createModal(message, 'confirm', true);
     }
 
-    // --- New Trending Videos Logic ---
     const trendingVideosContainer = document.getElementById('trending-videos-container');
     const trendingRefreshBtn = document.getElementById('refresh-trending-btn');
     const topicButtons = document.querySelectorAll('.topic-btn');
     const videoUrlInput = document.getElementById('video_url');
 
     let currentActiveTopic = '';
-    // Store page tokens for each topic
-    const topicPageTokens = {}; // e.g., { 'Artificial Intelligence': 'token123', 'Comedy': 'token456' }
+    const topicPageTokens = {};
 
     function setActiveTopicButton(selectedButton) {
-        topicButtons.forEach(btn => {
-            btn.classList.remove('active');
-        });
+        topicButtons.forEach(btn => btn.classList.remove('active'));
         if (selectedButton) {
             selectedButton.classList.add('active');
             currentActiveTopic = selectedButton.dataset.topic;
@@ -811,14 +801,11 @@ document.querySelectorAll('.btn-copy').forEach(button => {
             const data = await response.json();
 
             renderTrendingVideos(data.videos);
-            // Store the nextPageToken for the current topic
             topicPageTokens[topic] = data.nextPageToken;
 
-            // If no videos are returned and we had a page token, it means we've exhausted results.
-            // Reset the token for this topic to fetch from the beginning next time.
             if (data.videos.length === 0 && pageToken) {
                 displayMessage(`No more videos found for "${topic}". Resetting to first page for next refresh.`, 'info');
-                topicPageTokens[topic] = null; // Reset to start from the beginning next time
+                topicPageTokens[topic] = null;
             }
 
         } catch (error) {
@@ -879,44 +866,35 @@ document.querySelectorAll('.btn-copy').forEach(button => {
         }
     });
 
-    // Event listeners for new trending topic buttons
     topicButtons.forEach(button => {
         button.addEventListener('click', () => {
             const topic = button.dataset.topic;
             setActiveTopicButton(button);
-            // When a new topic is selected, reset its page token to fetch the first page
             topicPageTokens[topic] = null;
             fetchTrendingVideos(topic, topicPageTokens[topic]);
         });
     });
 
-    // Event listener for refresh button: Now uses currentActiveTopic's stored pageToken
     trendingRefreshBtn.addEventListener('click', () => {
         if (currentActiveTopic) {
-            // Use the stored nextPageToken for the current active topic
             const nextPageToken = topicPageTokens[currentActiveTopic];
             fetchTrendingVideos(currentActiveTopic, nextPageToken);
         } else {
-            // If no topic is explicitly selected, fetch general trending (first page)
             displayMessage('No topic selected. Fetching general trending videos (first page).', 'info');
-            fetchTrendingVideos('', null); // Pass null for pageToken to get first page of general trending
+            fetchTrendingVideos('', null);
         }
     });
 
     document.addEventListener('DOMContentLoaded', () => {
-        // Optionally load a default topic on page load, e.g., "Artificial Intelligence"
         const defaultTopic = "Artificial Intelligence";
         const defaultTopicButton = document.querySelector(`.topic-btn[data-topic="${defaultTopic}"]`);
         if (defaultTopicButton) {
             setActiveTopicButton(defaultTopicButton);
-            fetchTrendingVideos(defaultTopic, null); // Load first page of default topic
+            fetchTrendingVideos(defaultTopic, null);
         } else {
-            fetchTrendingVideos('', null); // Load first page of general trending if no default
+            fetchTrendingVideos('', null);
         }
     });
-
-    
-
 </script>
 </body>
 </html>

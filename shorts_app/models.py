@@ -2,6 +2,7 @@
 import uuid
 from django.db import models
 
+
 class DownloadedVideo(models.Model):
     video_id = models.CharField(max_length=20, unique=True, primary_key=True)
     title = models.CharField(max_length=255)
@@ -33,3 +34,17 @@ class GeneratedShort(models.Model):
     
     def __str__(self):
         return f"Short: {self.title}"
+
+
+
+class SocialAccount(models.Model):
+    provider = models.CharField(max_length=30)  # e.g., 'youtube', 'instagram'
+    provider_user_id = models.CharField(max_length=255) # User's ID on the social platform
+    access_token = models.TextField()
+    refresh_token = models.TextField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+    def __str__(self):
+        return f"{self.user.username}'s {self.provider.title()} Account"
