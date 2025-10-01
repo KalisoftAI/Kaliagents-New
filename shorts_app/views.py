@@ -11,7 +11,19 @@ import webvtt
 import csv
 import io
 from urllib.parse import urlparse, parse_qs
-from . import youtube_service
+import google.generativeai as genai
+from google.api_core.exceptions import NotFound
+from . import youtube_service, instagram_service 
+import json 
+from yt_dlp.utils import DownloadError
+from django.shortcuts import redirect
+from django.conf import settings
+from google_auth_oauthlib.flow import Flow
+import googleapiclient.discovery as discovery
+from googleapiclient.errors import HttpError
+import googleapiclient.discovery
+import requests
+from .models import SocialAccount
 
 from django.shortcuts import render, get_object_or_404
 from django.conf import settings
@@ -24,13 +36,16 @@ from moviepy.video.fx.all import crop, resize
 
 from .models import DownloadedVideo, GeneratedShort
 import google.generativeai as genai
-
+from moviepy.editor import VideoFileClip, TextClip, CompositeVideoClip
+from yt_dlp.utils import DownloadError
 # Import for YouTube Data API
 import googleapiclient.discovery
 import googleapiclient.errors
 
 logger = logging.getLogger(__name__)
 
+YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload", "https://www.googleapis.com/auth/youtube.readonly"]
+YOUTUBE_OAUTH_REDIRECT_URI = getattr(settings, 'GOOGLE_OAUTH_REDIRECT_URI', 'http://127.0.0.1:8000/youtube/callback/')
 # --- Configure Gemini (Unchanged) ---
 genai_configured = False
 try:
@@ -42,6 +57,7 @@ try:
 except Exception as e:
     logger.error(f"Error during Gemini configuration: {e}. AI features disabled.")
     genai = None
+
 
 # --- NEW: CSV Logging Helper Function ---
 def log_to_csv(full_transcript: str, ai_transcripts: list, output_link: str, feedback: str):
@@ -87,110 +103,379 @@ def log_to_csv(full_transcript: str, ai_transcripts: list, output_link: str, fee
         logger.info(f"Appended a new row to {csv_file_path}")
 
 
-def post_to_youtube(request, short_id):
-    if request.method != 'POST':
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+INSTAGRAM_SCOPES = 'instagram_basic,instagram_content_publish,pages_show_list'
 
-    try:
-        # 1. Get the GeneratedShort object from the database
-        short = get_object_or_404(GeneratedShort, id=short_id)
-
-        # 2. Construct the full, absolute path to the video file
-        video_full_path = os.path.join(settings.BASE_DIR, short.short_path.lstrip('/'))
-
-        # 3. Get the social media content from the short's record
-        # We use the AI-generated content if available, otherwise fall back to the original.
-        title = short.social_title or short.title
-        description = short.social_description or short.description
-        tags = short.social_hashtags or short.tags
-
-        # 4. Call the upload function from your new service file
-        result = youtube_service.upload_video(
-            file_path=video_full_path,
-            title=title,
-            description=description,
-            tags=tags,
-            privacy_status="private"  # Or "public" or "unlisted"
-        )
-
-        # 5. Return the result to the frontend
-        return JsonResponse(result)
-
-    except Exception as e:
-        logger.error(f"Error in post_to_youtube view: {e}", exc_info=True)
-        return JsonResponse({'status': 'error', 'message': f'An unexpected error occurred: {e}'}, status=500)
-
-        
-def get_ai_suggested_clips(transcript: str, video_duration: int, video_title: str):
+def instagram_connect(request):
     """
-    Analyzes a video transcript to suggest relevant, contextual clips for shorts.
+    Initiates the OAuth flow to connect an Instagram Business account.
     """
-    if not genai_configured or not genai:
-        logger.warning("Gemini AI not configured. Cannot generate clip suggestions.")
-        return []
+    auth_url = (
+        f"https://www.facebook.com/v19.0/dialog/oauth?"
+        f"client_id={settings.INSTAGRAM_APP_ID}"
+        f"&redirect_uri={settings.INSTAGRAM_REDIRECT_URI}"
+        f"&scope={INSTAGRAM_SCOPES}"
+        f"&response_type=code"
+    )
+    return redirect(auth_url)
 
-    model = genai.GenerativeModel('gemini-1.5-flash')
 
-    prompt = f"""
-        You are an expert viral content strategist specializing in short-form video.
+def instagram_callback(request):
+    """
+    Handles the redirect from Facebook after user authorization.
+    """
+    code = request.GET.get('code')
+    if not code:
+        return redirect('shorts_app:index')
 
-        *Your Task:*
-        Analyze the provided timestamped transcript. Identify up to 3 compelling segments ideal for short videos.
-        The ideal length for a short is between 15 and 60 seconds.
+    # 1. Exchange code for a user access token
+    token_url = 'https://graph.facebook.com/v19.0/oauth/access_token'
+    token_params = {
+        'client_id': settings.INSTAGRAM_APP_ID,
+        'redirect_uri': settings.INSTAGRAM_REDIRECT_URI,
+        'client_secret': settings.INSTAGRAM_APP_SECRET,
+        'code': code,
+    }
+    r = requests.get(token_url, params=token_params)
+    user_access_token = r.json().get('access_token')
 
-        For each segment, provide:
-        1.  `start_time` and `end_time` in "MM:SS" format, derived strictly from the transcript's timestamps.
-        2.  `title`: A concise, highly engaging title for the clip.
-        3.  `description`: A brief summary of the clip.
-        4.  `tags`: A JSON array of 5-7 relevant keywords.
-        5.  `copyright_concern`: A boolean (true/false).
-
-        *Transcript to Analyze:*
-        ---
-        {transcript}
-        ---
-
-        Your output MUST be a valid JSON array of objects, without any markdown formatting.
-        """
+    # 2. Get the user's Facebook Page connected to their Instagram account
+    pages_url = f"https://graph.facebook.com/me/accounts?access_token={user_access_token}"
+    r = requests.get(pages_url)
+    pages_data = r.json()['data']
+    if not pages_data:
+        # Handle error: User has no Facebook pages
+        return redirect('shorts_app:index') 
     
-    cleaned_text = "" # Define here to be accessible in the exception block
+    page_id = pages_data[0]['id']
+    page_access_token = pages_data[0]['access_token']
+
+    # 3. Get the Instagram Business Account ID
+    ig_account_url = f"https://graph.facebook.com/{page_id}?fields=instagram_business_account&access_token={page_access_token}"
+    r = requests.get(ig_account_url)
+    ig_business_account_id = r.json()['instagram_business_account']['id']
+    
+    SocialAccount.objects.update_or_create(
+        provider='instagram',
+        defaults={
+            'provider_user_id': ig_business_account_id,
+            'access_token': page_access_token,
+        }
+    )
+    return redirect('shorts_app:index')
+
+def youtube_connect(request):
+    """
+    Initiates the OAuth flow to connect a YouTube account.
+    """
+    flow = Flow.from_client_config(
+        {
+            'web': {
+                'client_id': settings.GOOGLE_OAUTH_CLIENT_ID,
+                'client_secret': settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                'redirect_uris': [YOUTUBE_OAUTH_REDIRECT_URI],
+                'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+                'token_uri': 'https://oauth2.googleapis.com/token',
+            }
+        },
+        scopes=YOUTUBE_SCOPES,
+        state=uuid.uuid4().hex  # For CSRF protection
+    )
+    auth_url, _ = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'  # Force refresh token
+    )
+    return redirect(auth_url)
+
+
+
+def burn_subtitles_into_video(video_path, vtt_path):
+    """
+    Takes a video file and a VTT transcript file and returns the path
+    to a new video with the subtitles burned in.
+    """
+    video_clip = VideoFileClip(video_path)
+    captions = webvtt.read(vtt_path)
+
+    subtitle_clips = []
+    for caption in captions:
+        # Create a moviepy TextClip for each caption line
+        text_clip = TextClip(
+            caption.text,
+            fontsize=40,
+            color='white',
+            font='Arial-Bold', # You may need to have this font installed or provide a path
+            stroke_color='black',
+            stroke_width=2,
+            method='caption',
+            size=(video_clip.w * 0.8, None) # Subtitles will take up 80% of the video width
+        )
+        
+        # Set the duration and start time of the text clip
+        text_clip = text_clip.set_duration(caption.end_in_seconds - caption.start_in_seconds)
+        text_clip = text_clip.set_start(caption.start_in_seconds)
+        
+        # Set the position of the subtitles
+        # ('center', 0.8) places it horizontally centered and 80% down the screen.
+        text_clip = text_clip.set_position(('center', 0.8), relative=True)
+        
+        subtitle_clips.append(text_clip)
+
+    # Overlay the subtitle clips on the original video
+    final_clip = CompositeVideoClip([video_clip] + subtitle_clips)
+
+    # Create a new filename for the subtitled video
+    original_dir = os.path.dirname(video_path)
+    original_filename = os.path.basename(video_path)
+    new_filename = f"{os.path.splitext(original_filename)[0]}_subtitled.mp4"
+    output_path = os.path.join(original_dir, new_filename)
+
+    # Write the final video file
+    final_clip.write_videofile(output_path, codec="libx264", audio_codec="aac")
+
+    video_clip.close()
+    final_clip.close()
+    
+    # Return the web-accessible path to the new video
+    return f'/media/shorts/{new_filename}'
+
+# In shorts_app/views.py
+# shorts_app/views.py (around line 348)
+
+# ...
+
+def add_subtitles(request, short_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request.'})
+
+    task_id = str(uuid.uuid4())
+    # Note: Initializing the task message for the frontend
+    cache.set(task_id, {"status": "starting", "progress": 0, "message": "Initializing subtitle task..."})
+
+    def subtitle_task():
+        try:
+            short = get_object_or_404(GeneratedShort, id=short_id)
+            parent_video = short.parent_video
+
+            # Construct the full file paths
+            # The short_path should already be a web-accessible path starting with /media/shorts/
+            video_full_path = os.path.join(settings.BASE_DIR, short.short_path.lstrip('/'))
+            
+            # The VTT path must point to the actual file location on the filesystem
+            vtt_filename = f'{parent_video.video_id}.en.vtt'
+            vtt_full_path = os.path.join(settings.MEDIA_ROOT, 'videos', vtt_filename)
+
+            if not os.path.exists(vtt_full_path):
+                 # --- FIX: Log the missing path for debugging ---
+                 logger.warning(f"Transcript file NOT FOUND at expected path: {vtt_full_path}")
+                 
+                 # The frontend expects a specific error status, but since this is a known external reason (no YT subs),
+                 # we use 'error' status and the message reported in the logs.
+                 cache.set(task_id, {'status': 'error', 'message': 'Transcript file not found.'})
+                 return
+
+            cache.set(task_id, {"status": "processing", "progress": 50, "message": "Burning subtitles into video..."})
+            
+            # Call the helper function
+            new_video_path = burn_subtitles_into_video(video_full_path, vtt_full_path)
+            
+            # Update the database record to point to the new video file
+            short.short_path = new_video_path
+            short.save()
+            
+            # The frontend is polling for this 'complete' status
+            cache.set(task_id, {
+                'status': 'complete', 
+                'progress': 100,
+                'message': 'Subtitles burned successfully!',
+                'result': {'new_path': new_video_path}
+            })
+
+        except Exception as e:
+            logger.error(f"Error in subtitle task for {short_id}: {e}", exc_info=True)
+            # Ensure the error status is sent back to the frontend
+            cache.set(task_id, {'status': 'error', 'message': f'A critical error occurred: {e}'})
+
+    threading.Thread(target=subtitle_task).start()
+    return JsonResponse({'status': 'processing', 'task_id': task_id})
+
+def youtube_connect(request):
+    """
+    Initiates the OAuth 2.0 flow to connect a YouTube account.
+    """
+    flow = Flow.from_client_secrets_file(
+        'client_secret.json',
+        scopes=YOUTUBE_SCOPES,
+        redirect_uri=settings.GOOGLE_OAUTH_REDIRECT_URI
+    )
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'
+    )
+    request.session['oauth_state'] = state
+    return redirect(authorization_url)
+
+def youtube_callback(request):
+    """
+    Handles the redirect from Google after user authorization.
+    """
+    state = request.GET.get('state')
+    if not state:
+        return redirect('shorts_app:index')  # Or error page
+
+    flow = Flow.from_client_config(
+        {
+            'web': {
+                'client_id': settings.GOOGLE_OAUTH_CLIENT_ID,
+                'client_secret': settings.GOOGLE_OAUTH_CLIENT_SECRET,
+                'redirect_uris': [getattr(settings, 'GOOGLE_OAUTH_REDIRECT_URI', 'http://127.0.0.1:8000/youtube/callback/')],
+                'auth_uri': 'https://accounts.google.com/o/oauth2/auth',
+                'token_uri': 'https://oauth2.googleapis.com/token',
+            }
+        },
+        scopes=YOUTUBE_SCOPES,
+        state=state
+    )
+
+    flow.fetch_token(authorization_response=request.build_absolute_uri())
+    credentials = flow.credentials
+
+    # Get user info (channel ID) - use discovery.build here
+    youtube = discovery.build('youtube', 'v3', credentials=credentials)
+    channels_response = youtube.channels().list(
+        part='id,snippet',
+        mine=True
+    ).execute()
+    channel_id = channels_response['items'][0]['id'] if channels_response['items'] else None
+
+    if not channel_id:
+        return redirect('shorts_app:index')  # No channel
+
+    # Save to SocialAccount
+    SocialAccount.objects.update_or_create(
+        provider='youtube',
+        defaults={
+            'provider_user_id': channel_id,
+            'access_token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'expires_at': credentials.expiry,
+        }
+    )
+    return redirect('shorts_app:index')
+
+
+def post_to_youtube(request, short_id):
+    """
+    Handles posting a short to YouTube via AJAX/POST.
+    Expects form data: title, description, tags, privacy, made_for_kids.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=405)
+
+    short = get_object_or_404(GeneratedShort, id=short_id)
+    file_path = os.path.join(settings.MEDIA_ROOT, short.short_path.lstrip('/'))
+
+    if not os.path.exists(file_path):
+        return JsonResponse({'status': 'error', 'message': 'Video file not found.'}, status=404)
+
+    title = request.POST.get('title', short.social_title or short.title)
+    description = request.POST.get('description', short.social_description or short.description)
+    tags = [tag.strip() for tag in request.POST.get('tags', '').split(',') if tag.strip()] or short.social_hashtags or short.tags
+    privacy_status = request.POST.get('privacy', 'private')
+    made_for_kids = request.POST.get('made_for_kids') == 'on'
+
+    result = youtube_service.upload_video(
+        file_path=file_path,
+        title=title,
+        description=description,
+        tags=tags,
+        privacy_status=privacy_status,
+        made_for_kids=made_for_kids
+    )
+
+    if result['status'] == 'success':
+        # Optionally save video_id to model or log
+        logger.info(f"Uploaded to YouTube: {result['video_id']}")
+        return JsonResponse({'status': 'success', 'video_id': result['video_id'], 'url': f'https://youtu.be/{result["video_id"]}'} )
+    else:
+        return JsonResponse({'status': 'error', 'message': result['message']}, status=400)
+
+def post_to_instagram(request, short_id):
+    """
+    Handles posting a short to Instagram as a Reel via AJAX/POST.
+    Expects form data: caption, share_to_feed.
+    """
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method.'}, status=405)
+
+    short = get_object_or_404(GeneratedShort, id=short_id)
+    caption = request.POST.get('caption', short.social_description or short.description)
+    share_to_feed = request.POST.get('share_to_feed') == 'on'
+
+    result = instagram_service.upload_reel(request, short, caption, share_to_feed)
+
+    if result['status'] == 'success':
+        logger.info(f"Uploaded to Instagram: {result['media_id']}")
+        return JsonResponse({'status': 'success', 'media_id': result['media_id']})
+    else:
+        return JsonResponse({'status': 'error', 'message': result['message']}, status=400)
+    
+    
+def get_ai_suggested_clips(transcript, video_duration):
+    if not genai_configured:
+        logger.warning("Gemini API not configured. Returning empty suggestions.")
+        return {"clips": []}
+
     try:
+        # Try a supported model
+        model_name = 'gemini-1.5-flash-latest'  # Use latest version to ensure availability
+        model = genai.GenerativeModel(model_name)
+        prompt = f"""
+        You are an expert video editor specializing in creating engaging short-form content (e.g., YouTube Shorts, TikTok, Instagram Reels).
+        Given the transcript of a video and its duration, suggest 3 short clips (each 15-60 seconds long) that would maximize engagement for social media platforms.
+        The transcript is:
+        {transcript}
+        Video duration: {video_duration} seconds
+        For each clip, provide:
+        - Start time (in MM:SS format)
+        - End time (in MM:SS format)
+        - A brief description of why this clip is engaging
+        - Suggested title for the clip
+        - Suggested hashtags (as a list)
+        Return the response as a JSON object with a list of clips under the key 'clips'.
+        **Success Criteria:**
+        The content should be designed to achieve high watch time, strong engagement rates, and maximum shareability while maintaining authenticity and brand alignment.
+        """
         response = model.generate_content(prompt)
-        print("response 1", response)
-        # More robust cleaning to handle markdown code blocks
+        
+        # Clean response to extract JSON
         cleaned_text = response.text.strip()
         if cleaned_text.startswith("```json"):
             cleaned_text = cleaned_text[7:]
         if cleaned_text.endswith("```"):
             cleaned_text = cleaned_text[:-3]
-        
-        # Find the start of the actual JSON array
-        json_start_index = cleaned_text.find('[')
-        # If a JSON array is found, parse it from that point
+
+        json_start_index = cleaned_text.find('{')
         if json_start_index != -1:
             json_response_text = cleaned_text[json_start_index:]
-            raw_clips = json.loads(json_response_text)
+            return json.loads(json_response_text)
         else:
-            # If no '[' is found, the response is invalid
-            raise json.JSONDecodeError("No JSON array found in the response", cleaned_text, 0)
-
-        if isinstance(raw_clips, list):
-            # Validate that each item in the list is a dictionary with the required keys
-            return [
-                c for c in raw_clips
-                if isinstance(c, dict) and all(k in c for k in ['start_time', 'end_time', 'title', 'description', 'tags'])
-            ]
-        else:
-            logger.error(f"AI response was not a JSON list as expected. Received: {raw_clips}")
-            return []
-
-    except json.JSONDecodeError as e:
-        # The log will now show the cleaned text for better debugging
-        logger.error(f"Failed to decode JSON from Gemini API response: {e}\nCleaned response text was: {cleaned_text}")
-        return []
+            logger.error(f"No JSON object found in Gemini response: {cleaned_text}")
+            return {"clips": []}
+    except NotFound as e:
+        logger.error(f"Gemini model {model_name} not found: {str(e)}")
+        # List available models for debugging
+        try:
+            models = genai.list_models()
+            available_models = [m.name for m in models if 'generateContent' in m.supported_generation_methods]
+            logger.info(f"Available Gemini models: {available_models}")
+        except Exception as list_error:
+            logger.error(f"Failed to list Gemini models: {str(list_error)}")
+        return {"clips": []}
     except Exception as e:
-        logger.error(f"An unexpected error occurred calling Gemini API: {e}", exc_info=True)
-        return []
+        logger.error(f"Error generating AI suggestions with Gemini: {str(e)}", exc_info=True)
+        return {"clips": []}
 
 def save_analysis_to_csv(original_transcript, suggested_clips):
     """
@@ -237,6 +522,39 @@ def get_youtube_id(url):
     if query.hostname == 'youtu.be': return query.path[1:]
     return None
 
+# In shorts_app/views.py
+
+def regenerate_social_content(request, short_id):
+    if request.method != 'POST':
+        return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+
+    try:
+        short = get_object_or_404(GeneratedShort, id=short_id)
+        
+        # Call the existing AI helper function
+        social_post_data = generate_social_post_content(short.title, short.description)
+        
+        if social_post_data:
+            # Update the short in the database with the new content
+            short.social_title = social_post_data.get('catchy_title')
+            short.social_description = social_post_data.get('engaging_description')
+            short.social_hashtags = social_post_data.get('hashtags', [])
+            short.save()
+            
+            # Return the newly generated content
+            return JsonResponse({
+                'status': 'success',
+                'social_title': short.social_title,
+                'social_description': short.social_description,
+                'social_hashtags': short.social_hashtags
+            })
+        else:
+            return JsonResponse({'status': 'error', 'message': 'Failed to generate content from AI.'}, status=500)
+
+    except Exception as e:
+        logger.error(f"Error regenerating social content: {e}", exc_info=True)
+        return JsonResponse({'status': 'error', 'message': f'Error: {e}'}, status=500)
+
 
 def index(request):
     # This function remains unchanged from your original code
@@ -248,97 +566,139 @@ def index(request):
 def check_progress(request, task_id):
     # This function remains unchanged from your original code
     return JsonResponse(cache.get(task_id, {"status": "PENDING", "progress": 0, "message": "Initializing..."}))
-
 def process_video(request):
     if request.method != 'POST':
-        return JsonResponse({'status': 'error', 'message': 'Invalid request method.'})
+        return JsonResponse({'status': 'error', 'message': 'Invalid request.'})
 
-    video_url = request.POST.get('video_url')
-    video_id = request.POST.get('video_id') or get_youtube_id(video_url)
+    try:
+        # The request body is expected to be JSON now, thanks to the frontend fix
+        data = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({'status': 'error', 'message': 'Invalid JSON body.'}, status=400)
+
+    video_url = data.get('video_url')
+    # If the client used the 'Use Previous Video' button, the payload will contain video_id
+    video_id_from_payload = data.get('video_id')
+
+    if not video_url and not video_id_from_payload:
+        return JsonResponse({'status': 'error', 'message': 'No video URL or ID provided.'}, status=400)
     
-    if not video_id:
-        return JsonResponse({'status': 'error', 'message': 'Valid YouTube URL or Video ID is required.'})
+    # If video_id is present, we are using a previously downloaded video and skip download.
+    if video_id_from_payload:
+        video_url = f"https://www.youtube.com/watch?v={video_id_from_payload}" # Dummy URL for consistent logging
 
     task_id = str(uuid.uuid4())
+    cache.set(task_id, {"status": "starting", "progress": 0, "message": "Initializing task..."})
 
-    def long_running_task():
-        
-        def progress_hook(d):
-            if d['status'] == 'downloading':
-                percent_str = d.get('_percent_str', '0.0%').strip()
-                cleaned_str = re.sub(r'\x1b\[[0-9;]*m', '', percent_str).replace('%', '')
-                try:
-                    progress = float(cleaned_str)
-                    cache.set(task_id, {"status": "processing", "progress": progress, "message": "Downloading video..."})
-                except (ValueError, TypeError):
-                    pass 
-            elif d['status'] == 'finished':
-                cache.set(task_id, {"status": "processing", "progress": 100, "message": "Analyzing transcript..."})
-
+    def background_task():
+        video_id = None
         try:
-            output_dir = os.path.join(settings.MEDIA_ROOT, 'videos')
-            os.makedirs(output_dir, exist_ok=True)
-            video_full_path = os.path.join(output_dir, f'{video_id}.mp4')
-            transcript_path = os.path.join(output_dir, f'{video_id}.en.vtt')
-
-            if not os.path.exists(video_full_path) or not os.path.exists(transcript_path):
-                if not video_url:
-                    cache.set(task_id, {'status': 'error', 'message': 'Video files not found. Please re-process with the original URL.'})
-                    return
-
+            # --- 1. HANDLE EXISTING VIDEO ---
+            if video_id_from_payload:
+                video_id = video_id_from_payload
+                video_obj = get_object_or_404(DownloadedVideo, video_id=video_id)
+                
+                if video_obj.suggestions and video_obj.suggestions.get('clips'):
+                    suggestions = video_obj.suggestions
+                    logger.info(f"Using cached AI suggestions for video ID: {video_id}")
+                    title = video_obj.title
+                else:
+                    transcript_file = os.path.join(settings.MEDIA_ROOT, 'videos', f"{video_id}.en.vtt")
+                    transcript = ""
+                    if os.path.exists(transcript_file):
+                        with open(transcript_file, 'r', encoding='utf-8') as f:
+                            transcript = f.read()
+                    
+                    logger.info(f"Re-running AI suggestions for existing video {video_id}...")
+                    suggestions = get_ai_suggested_clips(transcript, video_obj.duration) or {"clips": []}
+                    video_obj.suggestions = suggestions
+                    video_obj.save()
+                    title = video_obj.title
+            
+            # --- 2. HANDLE NEW VIDEO DOWNLOAD ---
+            else:
                 ydl_opts = {
-                    'format': 'best[height<=1080][ext=mp4]', 'outtmpl': os.path.join(output_dir, f'{video_id}.%(ext)s'),
-                    'merge_output_format': 'mp4', 'noplaylist': True, 'writesubtitles': True,
-                    'writeautomaticsub': True, 'subtitleslangs': ['en'], 'subtitlesformat': 'vtt',
-                    'writethumbnail': True, 'nocolor': True, 'progress_hooks': [progress_hook],
-                    'cookiefile': 'cookies.txt', 'ignoreerrors': 'only_subtitles',
-                    'sleep_interval': 5, 'max_sleep_interval': 15 
+                    'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]',
+                    'outtmpl': os.path.join(settings.MEDIA_ROOT, 'videos', '%(id)s.%(ext)s'),
+                    'writeautomaticsub': True,
+                    'subtitleslangs': ['en'],
+                    'quiet': False,
+                    'no_check_certificate': True,
+                    'extractor_retries': 5,
+                    'cookiefile': os.path.join(settings.BASE_DIR, 'cookies.txt'),
+                    'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36',
                 }
                 with YoutubeDL(ydl_opts) as ydl:
                     info = ydl.extract_info(video_url, download=True)
+                    video_id = info['id']
+                    title = info['title']
+                    duration = int(info.get('duration', 0))
+                    file_ext = info.get('ext')
+                    file_path = f"/media/videos/{video_id}.{file_ext}"
+                    thumbnail_path = f"/media/videos/{video_id}.jpg"
 
-                if not info:
-                    cache.set(task_id, {'status': 'error', 'message': 'Download failed. Video may be private or unavailable.'})
-                    return
-                
-                thumbnail_path = f'/media/videos/{video_id}.webp' if os.path.exists(os.path.join(output_dir, f'{video_id}.webp')) else f'/media/videos/{video_id}.jpg'
-                DownloadedVideo.objects.update_or_create(
-                    video_id=video_id,
-                    defaults={
-                        'title': info.get('title', 'N/A'), 'duration': info.get('duration', 0),
-                        'file_path': f'/media/videos/{video_id}.mp4', 'thumbnail_path': thumbnail_path
-                    }
-                )
+                    # Save thumbnail
+                    if info.get('thumbnail'):
+                        thumbnail_response = requests.get(info['thumbnail'])
+                        with open(os.path.join(settings.MEDIA_ROOT, 'videos', f"{video_id}.jpg"), 'wb') as f:
+                            f.write(thumbnail_response.content)
 
-            video_record = get_object_or_404(DownloadedVideo, video_id=video_id)
+                    # Get AI suggestions
+                    transcript = ""
+                    transcript_file = os.path.join(settings.MEDIA_ROOT, 'videos', f"{video_id}.en.vtt")
+                    if os.path.exists(transcript_file):
+                        with open(transcript_file, 'r', encoding='utf-8') as f:
+                            transcript = f.read()
+                    
+                    cache.set(task_id, {"status": "processing", "progress": 80, "message": "Generating AI suggestions..."})
+                    logger.info(f"Attempting to get AI suggestions for {video_id}...")
+                    
+                    suggestions = get_ai_suggested_clips(transcript, duration) or {"clips": []}
+                    
+                    if not suggestions:
+                        logger.warning(f"AI suggestions failed or returned empty for {video_id}. Falling back to empty suggestions.")
+                        suggestions = {"clips": []}
 
-            suggested_clips = []
-            if os.path.exists(transcript_path):
-                captions = webvtt.read(transcript_path)
-                timestamped_transcript = "\n".join([f"[{c.start} -> {c.end}] {c.text.strip()}" for c in captions])
-                if timestamped_transcript:
-                    suggested_clips = get_ai_suggested_clips(timestamped_transcript, video_record.duration, video_record.title)
-                    save_analysis_to_csv(timestamped_transcript, suggested_clips)
-            else:
-                logger.warning(f"Transcript file not found at {transcript_path}. Cannot generate suggestions or CSV.")
-
-            video_record.suggestions = suggested_clips
-            video_record.save()
+                    # Save to database
+                    DownloadedVideo.objects.update_or_create(
+                        video_id=video_id,
+                        defaults={
+                            'title': title,
+                            'duration': duration,
+                            'file_path': file_path,
+                            'thumbnail_path': thumbnail_path,
+                            'suggestions': suggestions,
+                        }
+                    )
             
-            cache.set(task_id, {'status': 'complete', 'result': {
-                'video_id': video_id,
-                'video_title': video_record.title,
-                'suggested_clips': video_record.suggestions
-            }})
+            # --- 3. FINAL SUCCESS UPDATE ---
+            logger.info(f"Video {video_id} data saved to DB and task complete.")
+            cache.set(task_id, {
+                "status": "complete",
+                "progress": 100,
+                "message": "Video processed successfully",
+                "result": {
+                    "video_id": video_id,
+                    "video_title": title,
+                    "suggested_clips": suggestions.get('clips', [])
+                }
+            })
 
+        except DownloadError as e:
+            if '403' in str(e):
+                error_msg = "403 Forbidden: Video may be age-restricted or geo-blocked. Update cookies or check settings."
+                logger.error(f"403 error for {video_url}: {str(e)}", exc_info=True)
+            else:
+                error_msg = f"Download failed: {str(e)}"
+                logger.error(f"Download error for {video_url}: {str(e)}", exc_info=True)
+            cache.set(task_id, {"status": "error", "progress": 100, "message": error_msg})
         except Exception as e:
-            logger.error(f"Critical error in video processing task for {video_id}: {e}", exc_info=True)
-            cache.set(task_id, {'status': 'error', 'message': f'A critical error occurred: {e}'})
+            error_msg = f"A critical error occurred: {str(e)}"
+            logger.error(f"Error processing video {video_url}: {str(e)}", exc_info=True)
+            cache.set(task_id, {"status": "error", "progress": 100, "message": error_msg})
 
-    threading.Thread(target=long_running_task).start()
-    return JsonResponse({'status': 'processing', 'task_id': task_id})
-
-
+    threading.Thread(target=background_task, daemon=True).start()
+    return JsonResponse({'status': 'started', 'task_id': task_id})
 def generate_social_post_content(clip_title: str, clip_description: str):
     """
     Generates engaging social media post content for a given video clip.
@@ -347,55 +707,56 @@ def generate_social_post_content(clip_title: str, clip_description: str):
         logger.warning("Gemini AI not configured. Cannot generate social post.")
         return None
 
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # FIX: Use the stable alias for the Pro model for the best creative results
+    model = genai.GenerativeModel('gemini-2.5-pro') 
 
     prompt = f"""
-You are an expert viral social media marketing strategist with proven experience creating content that achieves millions of views across YouTube Shorts, Instagram Reels, and TikTok. Your task is to create a compelling social media post for a short video clip that maximizes engagement and viral potential.
+        You are an expert viral social media marketing strategist with proven experience creating content that achieves millions of views across YouTube Shorts, Instagram Reels, and TikTok. Your task is to create a compelling social media post for a short video clip that maximizes engagement and viral potential.
 
-**Context and Requirements:**
-- Platform focus: YouTube Shorts, Instagram Reels, TikTok
-- Goal: Maximum engagement, shareability, and viral potential
-- Audience: All People ages, primarily 18-34, interested in trending and relatable content
-- Brand voice: Professional/Casual/Humorous 
+        **Context and Requirements:**
+        - Platform focus: YouTube Shorts, Instagram Reels, TikTok
+        - Goal: Maximum engagement, shareability, and viral potential
+        - Audience: All People ages, primarily 18-34, interested in trending and relatable content
+        - Brand voice: Professional/Casual/Humorous 
 
-**Clip Information:**
-- Title: "{clip_title}"
-- Description: "{clip_description}"
+        **Clip Information:**
+        - Title: "{clip_title}"
+        - Description: "{clip_description}"
 
-**Generate the following optimized content:**
+        **Generate the following optimized content:**
 
-1. **catchy_title**: Create a scroll-stopping, click-worthy title that:
-   - Uses power words and emotional triggers
-   - Includes numbers or "How to" when relevant
-   - Stays under 60 characters for mobile optimization
-   - Incorporates 1-2 strategic emojis
-   - Creates curiosity or promises value
+        1. **catchy_title**: Create a scroll-stopping, click-worthy title that:
+        - Uses power words and emotional triggers
+        - Includes numbers or "How to" when relevant
+        - Stays under 60 characters for mobile optimization
+        - Incorporates 1-2 strategic emojis
+        - Creates curiosity or promises value
 
-2. **engaging_description**: Write a compelling description that:
-   - Opens with a hook that grabs attention in the first line
-   - Explains the video's value proposition clearly
-   - Uses short, punchy sentences (max 15 words each)
-   - Includes strategic line breaks for mobile readability
-   - Incorporates a strong call-to-action
-   - Adds 2-3 relevant emojis for visual appeal
-   - Ends with an engagement question to boost comments
+        2. **engaging_description**: Write a compelling description that:
+        - Opens with a hook that grabs attention in the first line
+        - Explains the video's value proposition clearly
+        - Uses short, punchy sentences (max 15 words each)
+        - Includes strategic line breaks for mobile readability
+        - Incorporates a strong call-to-action
+        - Adds 2-3 relevant emojis for visual appeal
+        - Ends with an engagement question to boost comments
 
-3. **hashtags**: Provide an array of 12-15 strategic hashtags that include:
-   - 3-4 trending/broad hashtags (high volume)
-   - 4-5 niche-specific hashtags (targeted audience)
-   - 3-4 community hashtags (engagement-focused)
-   - 2-3 branded or unique hashtags
-   - Mix of popular and less competitive tags
+        3. **hashtags**: Provide an array of 12-15 strategic hashtags that include:
+        - 3-4 trending/broad hashtags (high volume)
+        - 4-5 niche-specific hashtags (targeted audience)
+        - 3-4 community hashtags (engagement-focused)
+        - 2-3 branded or unique hashtags
+        - Mix of popular and less competitive tags
 
-4. **best_posting_time**: Suggest optimal posting times based on platform and audience
+        4. **best_posting_time**: Suggest optimal posting times based on platform and audience
 
-5. **engagement_strategy**: Provide 2-3 specific tactics to boost initial engagement
+        5. **engagement_strategy**: Provide 2-3 specific tactics to boost initial engagement
 
-**Output Format Requirements:**
-Respond ONLY with a valid JSON object containing these exact keys: "catchy_title", "engaging_description", "hashtags", "best_posting_time", "engagement_strategy". No markdown formatting, no additional text, no code blocks.
+        **Output Format Requirements:**
+        Respond ONLY with a valid JSON object containing these exact keys: "catchy_title", "engaging_description", "hashtags", "best_posting_time", "engagement_strategy". No markdown formatting, no additional text, no code blocks.
 
-**Success Criteria:**
-The content should be designed to achieve high watch time, strong engagement rates, and maximum shareability while maintaining authenticity and brand alignment.
+        **Success Criteria:**
+        The content should be designed to achieve high watch time, strong engagement rates, and maximum shareability while maintaining authenticity and brand alignment.
 
     """
     

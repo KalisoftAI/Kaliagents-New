@@ -38,7 +38,7 @@ class GeneratedShort(models.Model):
 
 
 class SocialAccount(models.Model):
-    provider = models.CharField(max_length=30)  # e.g., 'youtube', 'instagram'
+    provider = models.CharField(max_length=30, primary_key=True)  # e.g., 'youtube', 'instagram'
     provider_user_id = models.CharField(max_length=255) # User's ID on the social platform
     access_token = models.TextField()
     refresh_token = models.TextField(null=True, blank=True)
@@ -47,4 +47,4 @@ class SocialAccount(models.Model):
 
 
     def __str__(self):
-        return f"{self.user.username}'s {self.provider.title()} Account"
+        return f"{self.provider.title()} Account ({self.provider_user_id})"

@@ -157,6 +157,12 @@
         .short-card__content h4 { margin: 0 0 0.5rem 0; font-family: 'Poppins', sans-serif; font-weight: 600;}
         .short-card__content p { font-size: 0.9rem; color: #6c757d; margin: 0;}
         .short-card__actions { padding:0 1rem 1rem 1rem; display:flex; gap:0.5rem; }
+        /* --- NEW Suggestion Layout --- */
+        .suggestions-container { display: flex; flex-direction: column; gap: 1.5rem; }
+        .suggestion-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; }
+
+        /* --- UPDATE for Short Card Actions --- */
+        .short-card__actions { padding:0 1rem 1rem 1rem; display:flex; flex-wrap: wrap; gap:0.5rem; }
 
         .trending-video-card {
             cursor: pointer;
@@ -212,7 +218,23 @@
         .topic-buttons-container .btn-refresh:hover {
             background-color: #5a6268;
         }
-            /* Paste this inside your <style> tag */
+        /* --- Styles for the New Upload Modal --- */
+        .tabs { display: flex; border-bottom: 1px solid var(--medium-gray); margin-bottom: 1.5rem; }
+        .tab-button {
+            padding: 10px 20px; border: none; background: none; cursor: pointer;
+            font-size: 1rem; font-weight: 600; color: var(--secondary-color);
+            border-bottom: 3px solid transparent; transition: all 0.2s ease;
+        }
+        .tab-button.active { color: var(--primary-color); border-bottom-color: var(--primary-color); }
+        .form-group-modal { margin-bottom: 1rem; }
+        .form-group-modal label { display: block; font-weight: 500; margin-bottom: 0.5rem; }
+        .form-control {
+            width: 100%; padding: 10px; border: 1px solid #ced4da;
+            border-radius: 8px; font-size: 1rem; box-sizing: border-box;
+        }
+        .form-control:focus { outline: none; border-color: var(--primary-color); box-shadow: 0 0 0 3px rgba(106, 17, 203, 0.15); }
+        textarea.form-control { resize: vertical; }
+        /* Paste this inside your <style> tag */
         .modal-overlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background-color: rgba(0, 0, 0, 0.6); display: flex;
@@ -251,23 +273,90 @@
         <div class="modal-content">
             <h2>🚀 Social Post Ready!</h2>
             <p>Your short video and social media content are ready to go.</p>
-            <div class="social-post-section">
-                <strong>✨ Title</strong>
-                <div id="social-title" class="copyable-text"></div>
-                <button class="btn-copy" data-target="social-title">Copy</button>
+            
+            <div id="modal-spinner" style="display: none; text-align: center; margin: 2rem 0;">
+                <div class="spinner" style="display: inline-block; width: 40px; height: 40px; border-top-color: var(--primary-color);"></div>
             </div>
-            <div class="social-post-section">
-                <strong>📝 Description</strong>
-                <div id="social-description" class="copyable-text"></div>
-                <button class="btn-copy" data-target="social-description">Copy</button>
-            </div>
-            <div class="social-post-section">
-                <strong>＃ Hashtags</strong>
-                <div id="social-hashtags" class="copyable-text"></div>
-                <button class="btn-copy" data-target="social-hashtags">Copy</button>
+
+            <div id="modal-content-container">
+                <div class="social-post-section">
+                    <strong>✨ Title</strong>
+                    <div id="social-title" class="copyable-text"></div>
+                    <button class="btn-copy" data-target="social-title">Copy</button>
+                </div>
+                <div class="social-post-section">
+                    <strong>📝 Description</strong>
+                    <div id="social-description" class="copyable-text"></div>
+                    <button class="btn-copy" data-target="social-description">Copy</button>
+                </div>
+                <div class="social-post-section">
+                    <strong>＃ Hashtags</strong>
+                    <div id="social-hashtags" class="copyable-text"></div>
+                    <button class="btn-copy" data-target="social-hashtags">Copy</button>
+                </div>
             </div>
             <div class="modal-actions">
                 <button id="social-close-btn" class="btn btn-primary">Close</button>
+            </div>
+        </div>
+    </div>
+    <div id="upload-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h2>Prepare Your Social Post</h2>
+            <div class="tabs">
+                <button class="tab-button active" data-platform="youtube">YouTube</button>
+                <button class="tab-button" data-platform="instagram">Instagram</button>
+            </div>
+
+            <form id="upload-form">
+                <input type="hidden" id="upload-short-id">
+
+                <div class="form-group-modal">
+                    <label for="upload-title">Title</label>
+                    <input type="text" id="upload-title" class="form-control" required>
+                </div>
+                <div class="form-group-modal">
+                    <label for="upload-description">Description / Caption</label>
+                    <textarea id="upload-description" class="form-control" rows="5"></textarea>
+                </div>
+
+                <div class="platform-fields" id="youtube-fields">
+                    <div class="form-group-modal">
+                        <label for="upload-tags">Tags (comma-separated)</label>
+                        <input type="text" id="upload-tags" class="form-control">
+                    </div>
+                    <div class="form-group-modal">
+                        <label for="upload-privacy">Privacy</label>
+                        <select id="upload-privacy" class="form-control">
+                            <option value="private">Private</option>
+                            <option value="unlisted">Unlisted</option>
+                            <option value="public">Public</option>
+                        </select>
+                    </div>
+                    <div class="form-group-modal">
+                        <label>Age Restriction</label>
+                        <div>
+                            <input type="checkbox" id="upload-made-for-kids">
+                            <label for="upload-made-for-kids">This video is made for kids.</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="platform-fields" id="instagram-fields" style="display: none;">
+                    <div class="form-group-modal">
+                        <label>Options</label>
+                        <div>
+                            <input type="checkbox" id="upload-share-to-feed" checked>
+                            <label for="upload-share-to-feed">Share Reel to Feed</label>
+                        </div>
+                    </div>
+                    <p style="font-size: 0.8rem; color: #6c757d;">Note: Instagram API requires the video to be publicly accessible online for upload.</p>
+                </div>
+
+            </form>
+            <div class="modal-actions">
+                <button id="upload-submit-btn" class="btn btn-primary"><span class="btn-text">Upload Now</span><div class="spinner"></div></button>
+                <button id="upload-close-btn" class="btn btn-secondary">Cancel</button>
             </div>
         </div>
     </div>
@@ -354,8 +443,9 @@
                         <div id="status-{{ short.id }}" style="margin-top: 10px; font-weight: 500;"></div>
                     </div>
                     <div class="short-card__actions">
-                        <a href="{% url 'shorts_app:download_short' filename=short.short_path|slice:'14:' %}" class="btn btn-secondary">Download</a>
-                        <button type="button" class="btn btn-primary" onclick="postToYouTube('{{ short.id }}')">Post</button>
+                        <button type="button" class="btn btn-secondary" onclick="generateInfo('{{ short.id }}')">Info</button>
+                        <button type="button" class="btn btn-secondary" onclick="addSubtitle('{{ short.id }}')">Edit</button> 
+                        <button type="button" class="btn btn-primary" onclick="openUploadModal('{{ short.id }}')">Post</button>
                         <button type="button" class="delete-btn btn btn-danger" data-id="{{ short.id }}" data-type="short">Delete</button>
                     </div>
                 </div>
@@ -375,7 +465,66 @@
         button.disabled = isLoading;
         button.classList.toggle('loading', isLoading);
     }
+    document.addEventListener('DOMContentLoaded', function() {
+    // YouTube Post Handler
+    const ytForm = document.getElementById('youtube-form');  // Assume form ID
+    if (ytForm) {
+        ytForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(ytForm);
+            const shortId = ytForm.dataset.shortId;  // Pass short_id via data attribute
 
+            fetch(`/post/youtube/${shortId}/`, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Uploaded to YouTube! Video ID: ' + data.video_id);
+                    // Close modal or redirect
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => alert('Upload failed: ' + error));
+        });
+    }
+
+    // Instagram Post Handler (similar)
+    const igForm = document.getElementById('instagram-form');
+    if (igForm) {
+        igForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(igForm);
+            const shortId = igForm.dataset.shortId;
+
+            fetch(`/post/instagram/${shortId}/`, {
+                method: 'POST',
+                body: formData,
+                headers: { 'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert('Uploaded to Instagram! Media ID: ' + data.media_id);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => alert('Upload failed: ' + error));
+        });
+    }
+
+    // Connect Buttons (if not already handled)
+    document.getElementById('connect-youtube')?.addEventListener('click', () => {
+        window.location.href = '/connect/youtube/';
+    });
+    document.getElementById('connect-instagram')?.addEventListener('click', () => {
+        window.location.href = '/connect/instagram/';
+    });
+});
     function showProgress(type, show, text = '', percentage = 0) {
         const container = document.getElementById(`${type}-progress`);
         const textElem = document.getElementById(`${type}-progress-text`);
@@ -399,14 +548,21 @@
         }
     }
 
-    async function startProcessing(formData, button) {
+    async function startProcessing(payload, button) { // payload is now a JSON string
         toggleButtonLoading(button, true);
         document.getElementById('results-container').innerHTML = '';
         showProgress('generation', false);
         showProgress('processing', true, 'Initializing task...', 0);
 
         try {
-            const response = await fetch("{% url 'shorts_app:process_video' %}", { method: 'POST', body: formData, headers: {'X-CSRFToken': csrfToken} });
+            const response = await fetch("{% url 'shorts_app:process_video' %}", { 
+                method: 'POST', 
+                body: payload, // <--- Send the raw JSON string
+                headers: {
+                    'X-CSRFToken': csrfToken,
+                    'Content-Type': 'application/json' // <--- REQUIRED HEADER
+                }
+            });
             if (!response.ok) throw new Error(`Server error: ${response.statusText}`);
             const data = await response.json();
             if (data.task_id) {
@@ -492,28 +648,36 @@
         }
     }
 
-    function displayClips(data) {
-        const resultsContainer = document.getElementById('results-container');
-        let suggestionsHtml = '';
+function displayClips(data) {
+    const resultsContainer = document.getElementById('results-container');
+    let suggestionsHtml = '';
+    if (data.suggested_clips && data.suggested_clips.length > 0) {
+        const clips = data.suggested_clips;
+        const clipCard = (clip, index) => `
+            <div class="clip-card" data-clip-index="${index}">
+                <h4>${clip.title}</h4>
+                <p><strong>Time:</strong> ${clip.start_time} - ${clip.end_time}</p>
+                <div class="form-group">
+                    <strong>Aspect Ratio:</strong>
+                    <label><input type="radio" name="aspect_ratio_${index}" value="9:16" checked>📱 V</label>
+                    <label><input type="radio" name="aspect_ratio_${index}" value="16:9">💻 H</label>
+                    <label><input type="radio" name="aspect_ratio_${index}" value="original">🖼️ O</label>
+                </div>
+                <button type="button" class="generate-btn btn btn-primary" style="margin-top: auto;"><span class="btn-text">Create Short</span><div class="spinner"></div></button>
+            </div>`;
 
-        if (data.suggested_clips && data.suggested_clips.length > 0) {
-            data.suggested_clips.forEach((clip, index) => {
-                suggestionsHtml += `
-                    <div class="clip-card" data-clip-index="${index}">
-                        <h4>${clip.title}</h4>
-                        <p><strong>Time:</strong> ${clip.start_time} - ${clip.end_time}</p>
-                        <div class="form-group">
-                           <strong>Aspect Ratio:</strong>
-                           <label><input type="radio" name="aspect_ratio_${index}" value="9:16" checked>📱 Vertical</label>
-                           <label><input type="radio" name="aspect_ratio_${index}" value="16:9">💻 Horizontal</label>
-                           <label><input type="radio" name="aspect_ratio_${index}" value="original">🖼️ Original</label>
-                        </div>
-                        <button type="button" class="generate-btn btn btn-primary" style="margin-top: auto;"><span class="btn-text">Create Short</span><div class="spinner"></div></button>
-                    </div>`;
-            });
-        }
+        let row1 = '', row2 = '';
+        row1 += clipCard(clips[0], 0);
+        if (clips.length > 1) row1 += clipCard(clips[1], 1);
+        if (clips.length > 2) row2 += clipCard(clips[2], 2);
+        if (clips.length > 3) row2 += clipCard(clips[3], 3); // For 4th suggestion
 
-        const manualCardHtml = `
+        suggestionsHtml = `<div class="suggestion-row">${row1}</div>`;
+        if (row2) suggestionsHtml += `<div class="suggestion-row">${row2}</div>`;
+    }
+
+    const manualSectionHtml = `
+        <div id="manual-generation-section" style="display: none;">
             <div class="manual-card">
                 <h4>Create Manually</h4>
                 <p>Enter your own start and end times.</p>
@@ -523,54 +687,58 @@
                     <input type="text" id="manual-end-time" placeholder="End (MM:SS)">
                 </div>
                 <div class="form-group">
-                   <strong>Aspect Ratio:</strong>
-                   <label><input type="radio" name="manual_aspect_ratio" value="9:16" checked>📱 Vertical</label>
-                   <label><input type="radio" name="manual_aspect_ratio" value="16:9">💻 Horizontal</label>
-                   <label><input type="radio" name="manual_aspect_ratio" value="original">🖼️ Original</label>
+                    <strong>Aspect Ratio:</strong>
+                    <label><input type="radio" name="manual_aspect_ratio" value="9:16" checked>📱 V</label>
+                    <label><input type="radio" name="manual_aspect_ratio" value="16:9">💻 H</label>
+                    <label><input type="radio" name="manual_aspect_ratio" value="original">🖼️ O</label>
                 </div>
                 <button type="button" class="manual-generate-btn btn btn-primary" style="margin-top: auto;">
                     <span class="btn-text">Create Manual Clip</span><div class="spinner"></div>
                 </button>
                 <div id="error-manual" style="color:var(--danger-color);margin-top:0.5rem;font-size:0.9rem;"></div>
-            </div>`;
+            </div>
+        </div>`;
 
+    const finalHtml = `
+        <div class="card">
+            <h2>2. Create a Short from "${data.video_title}"</h2>
+            <div class="suggestions-container">
+                ${suggestionsHtml}
+                <button id="show-manual-btn" class="btn btn-secondary" style="align-self: flex-start;">Create Manual Clip</button>
+                ${manualSectionHtml}
+            </div>
+        </div>`;
 
-        const finalHtml = `
-            <div class="card">
-                <h2>2. Create a Short from "${data.video_title}"</h2>
-                <div class="suggestions-grid">${suggestionsHtml}${manualCardHtml}</div>
-            </div>`;
+    resultsContainer.innerHTML = finalHtml;
+    document.getElementById('show-manual-btn').addEventListener('click', function() {
+        document.getElementById('manual-generation-section').style.display = 'block';
+        this.style.display = 'none';
+    });
+    resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    attachCreationEventListeners(resultsContainer, data.video_id, data.suggested_clips);
+}
 
-        resultsContainer.innerHTML = finalHtml;
-        resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        attachCreationEventListeners(resultsContainer, data.video_id, data.suggested_clips);
-    }
-
-    // --- BUG FIX: This function was missing in your original file ---
     function addShortCardToDOM(short) {
         const container = document.getElementById('generated-shorts-scroll-container');
         const placeholder = container.querySelector('.placeholder-text');
-        if (placeholder) {
-            placeholder.remove();
-        }
-
+        if (placeholder) placeholder.remove();
         const cardHTML = `
-            <div class="short-card" id="short-card-${short.id}">
-                <video class="short-card__video" controls preload="metadata" poster="${short.thumbnail_path}">
-                    <source src="${short.short_path}" type="video/mp4">
-                </video>
-                <div class="short-card__content">
-                    <h4>${short.title}</h4>
-                    <p>${short.description}</p>
-                    <div id="status-${short.id}" style="margin-top: 10px; font-weight: 500;"></div>
-                </div>
-                <div class="short-card__actions">
-                    <a href="${short.download_url}" class="btn btn-secondary">Download</a>
-                    <button type="button" class="btn btn-primary" onclick="postToYouTube('${short.id}')">Post</button>
-                    <button type="button" class="delete-btn btn btn-danger" data-id="${short.id}" data-type="short">Delete</button>
-                </div>
-            </div>`;
-        
+        <div class="short-card" id="short-card-${short.id}">
+            <video class="short-card__video" controls preload="metadata" poster="${short.thumbnail_path}">
+                <source src="${short.short_path}" type="video/mp4">
+            </video>
+            <div class="short-card__content">
+                <h4>${short.title}</h4>
+                <p>${short.description}</p>
+                <div id="status-${short.id}" style="margin-top: 10px; font-weight: 500;"></div>
+            </div>
+            <div class="short-card__actions">
+                <button type="button" class="btn btn-secondary" onclick="generateInfo('${short.id}')">Info</button>
+                <button type="button" class="btn btn-secondary" onclick="addSubtitle('${short.id}')">Edit</button> 
+                <button type="button" class="btn btn-primary" onclick="openUploadModal('${short.id}')">Post</button>
+                <button type="button" class="delete-btn btn btn-danger" data-id="${short.id}" data-type="short">Delete</button>
+            </div>
+        </div>`;
         container.insertAdjacentHTML('afterbegin', cardHTML);
     }
 
@@ -601,14 +769,64 @@
             document.querySelectorAll('.generate-btn, .manual-generate-btn').forEach(b => b.disabled = false);
         }
     }
+    // Add this new function inside your <script> tag
+    function addSubtitle(shortId) {
+        const statusDiv = document.getElementById(`status-${shortId}`);
+        statusDiv.innerHTML = 'Adding subtitles... This may take a moment.';
+        
+        fetch(`/edit/add_subtitles/${shortId}/`, {
+            method: 'POST',
+            headers: { 'X-CSRFToken': csrfToken }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.task_id) {
+                // Poll for the result of the subtitle task
+                let subtitleInterval = setInterval(() => {
+                    fetch(`/check_progress/${data.task_id}/`)
+                    .then(res => res.json())
+                    .then(progressData => {
+                        if (progressData.status === 'complete') {
+                            clearInterval(subtitleInterval);
+                            statusDiv.innerHTML = '✅ Subtitles added!';
+                            // Update the video source to the new subtitled video
+                            const videoElement = document.querySelector(`#short-card-${shortId} video`);
+                            const newPath = progressData.result.new_path;
+                            videoElement.querySelector('source').setAttribute('src', newPath);
+                            videoElement.load(); // Reload the video player
+                        } else if (progressData.status === 'error') {
+                            clearInterval(subtitleInterval);
+                            statusDiv.innerHTML = `❌ Error: ${progressData.message}`;
+                        } else {
+                            statusDiv.innerHTML = `⏳ ${progressData.message}`;
+                        }
+                    });
+                }, 3000);
+            } else {
+                throw new Error(data.message || 'Failed to start subtitle task.');
+            }
+        })
+        .catch(error => {
+            statusDiv.innerHTML = `❌ Error: ${error.message}`;
+        });
+    }
+    function showSocialModal(details, isLoading = false) {
+        const modal = document.getElementById('social-modal');
+        const spinner = document.getElementById('modal-spinner');
+        const contentContainer = document.getElementById('modal-content-container');
 
-    function showSocialModal(details) {
-        document.getElementById('social-title').textContent = details.social_title || 'No title generated.';
-        document.getElementById('social-description').textContent = details.social_description || 'No description generated.';
-        // Ensure hashtags are displayed correctly as a space-separated string
-        const hashtagsText = Array.isArray(details.social_hashtags) ? details.social_hashtags.join(' ') : (details.social_hashtags || '#novideotags');
-        document.getElementById('social-hashtags').textContent = hashtagsText;
-        document.getElementById('social-modal').classList.add('visible');
+        if (isLoading) {
+            spinner.style.display = 'block';
+            contentContainer.style.display = 'none';
+        } else {
+            spinner.style.display = 'none';
+            contentContainer.style.display = 'block';
+            document.getElementById('social-title').textContent = details.social_title || 'No title generated.';
+            document.getElementById('social-description').textContent = details.social_description || 'No description generated.';
+            const hashtagsText = Array.isArray(details.social_hashtags) ? details.social_hashtags.join(' ') : (details.social_hashtags || '#novideotags');
+            document.getElementById('social-hashtags').textContent = hashtagsText;
+        }
+        modal.classList.add('visible');
     }
 
     document.getElementById('social-close-btn').addEventListener('click', () => {
@@ -626,42 +844,98 @@
         });
     });
 
-    // NEW YOUTUBE POST FUNCTION
-    function postToYouTube(shortId) {
-        const statusDiv = document.getElementById(`status-${shortId}`);
-        if (!statusDiv) return;
-
-        statusDiv.style.color = '#343a40';
-        statusDiv.innerHTML = 'Uploading to YouTube...';
-
-        const postButton = document.querySelector(`#short-card-${shortId} button[onclick^="postToYouTube"]`);
-        if(postButton) postButton.disabled = true;
-
-        fetch(`/post/youtube/${shortId}/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': csrfToken,
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.status === 'success') {
-                statusDiv.style.color = 'green';
-                statusDiv.innerHTML = `✅ Uploaded! Video ID: ${data.video_id}`;
-            } else {
-                statusDiv.style.color = 'var(--danger-color)';
-                statusDiv.innerHTML = `❌ Error: ${data.message}`;
-            }
-        })
-        .catch(error => {
-            statusDiv.style.color = 'var(--danger-color)';
-            statusDiv.innerHTML = '❌ A network error occurred.';
-            console.error('Fetch Error:', error);
-        })
-        .finally(() => {
-            if(postButton) postButton.disabled = false;
+// Handle tab switching in the modal
+document.querySelectorAll('.tab-button').forEach(button => {
+    button.addEventListener('click', () => {
+        const platform = button.dataset.platform;
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
+        button.classList.add('active');
+        
+        document.querySelectorAll('.platform-fields').forEach(fieldSet => {
+            fieldSet.style.display = 'none';
         });
+        document.getElementById(`${platform}-fields`).style.display = 'block';
+    });
+});
+
+// Handle closing the modal
+document.getElementById('upload-close-btn').addEventListener('click', () => {
+    document.getElementById('upload-modal').classList.remove('visible');
+});
+
+// Handle the final "Upload Now" button click
+document.getElementById('upload-submit-btn').addEventListener('click', async () => {
+    const submitBtn = document.getElementById('upload-submit-btn');
+    toggleButtonLoading(submitBtn, true);
+
+    const shortId = document.getElementById('upload-short-id').value;
+    const statusDiv = document.getElementById(`status-${shortId}`);
+    const activePlatform = document.querySelector('.tab-button.active').dataset.platform;
+
+    let url = '';
+    let payload = {};
+
+    if (activePlatform === 'youtube') {
+        url = `/post/youtube/${shortId}/`;
+        payload = {
+            title: document.getElementById('upload-title').value,
+            description: document.getElementById('upload-description').value,
+            tags: document.getElementById('upload-tags').value.split(',').map(tag => tag.trim()),
+            privacyStatus: document.getElementById('upload-privacy').value,
+            madeForKids: document.getElementById('upload-made-for-kids').checked
+        };
+    } else {
+        // We will create this URL and view in the next steps
+        url = `/post/instagram/${shortId}/`; 
+        payload = {
+            caption: document.getElementById('upload-description').value,
+            share_to_feed: document.getElementById('upload-share-to-feed').checked
+        };
+    }
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+
+        if (data.status === 'success') {
+            statusDiv.style.color = 'green';
+            statusDiv.innerHTML = `✅ Successfully posted to ${activePlatform}!`;
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        statusDiv.style.color = 'var(--danger-color)';
+        statusDiv.innerHTML = `❌ Error: ${error.message}`;
+    } finally {
+        toggleButtonLoading(submitBtn, false);
+        document.getElementById('upload-modal').classList.remove('visible');
+    }
+});
+    // NEW YOUTUBE POST FUNCTION
+    function openUploadModal(shortId) {
+        const modal = document.getElementById('upload-modal');
+        const titleInput = document.getElementById('upload-title');
+        const descriptionInput = document.getElementById('upload-description');
+        const shortIdInput = document.getElementById('upload-short-id');
+
+        // Find the card to get the existing title and description
+        const shortCard = document.querySelector(`#short-card-${shortId}`);
+        const title = shortCard.querySelector('h4').textContent;
+        const description = shortCard.querySelector('p').textContent;
+
+        // Pre-fill the form
+        titleInput.value = title;
+        descriptionInput.value = description;
+        shortIdInput.value = shortId;
+        
+        // Reset to YouTube tab by default
+        document.querySelector('.tab-button[data-platform="youtube"]').click();
+
+        modal.classList.add('visible');
     }
 
     async function deleteItem(button) {
@@ -781,7 +1055,25 @@
             currentActiveTopic = '';
         }
     }
-
+        // NEW: Generate Info function
+    async function generateInfo(shortId) {
+        showSocialModal(null, true); // Show modal with spinner
+        try {
+            const response = await fetch(`/regenerate_social/${shortId}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken, 'Content-Type': 'application/json' }
+            });
+            const data = await response.json();
+            if (data.status === 'success') {
+                showSocialModal(data, false); // Update modal with new content
+            } else {
+                throw new Error(data.message);
+            }
+        } catch (error) {
+            alert(`Failed to generate info: ${error.message}`);
+            document.getElementById('social-modal').classList.remove('visible'); // Hide modal on error
+        }
+    }
     async function fetchTrendingVideos(topic, pageToken = null) {
         trendingVideosContainer.innerHTML = `<p class="placeholder-text">Loading videos for "${topic || 'Trending'}"...</p>`;
         toggleButtonLoading(trendingRefreshBtn, true);
@@ -844,11 +1136,17 @@
     document.getElementById('video-form').addEventListener('submit', (e) => {
         e.preventDefault();
         const urlInput = document.getElementById('video_url');
-        if (urlInput.value.trim() === '') {
+        const videoUrl = urlInput.value.trim();
+        if (videoUrl === '') {
             displayMessage('Please enter a YouTube URL.', 'info');
             return;
         }
-        startProcessing(new FormData(e.target), e.target.querySelector('button.btn'));
+        
+        // **NEW PAYLOAD**
+        const jsonPayload = JSON.stringify({ 'video_url': videoUrl });
+        
+        // Pass the JSON payload, NOT FormData
+        startProcessing(jsonPayload, e.target.querySelector('button.btn')); 
     });
 
     document.body.addEventListener('click', e => {
@@ -857,9 +1155,12 @@
 
         if (button.classList.contains('use-btn')) {
             e.preventDefault();
-            const formData = new FormData();
-            formData.append('video_id', button.dataset.videoId);
-            startProcessing(formData, button);
+            
+            // **NEW PAYLOAD**
+            const videoId = button.dataset.videoId;
+            const jsonPayload = JSON.stringify({ 'video_id': videoId }); 
+            
+            startProcessing(jsonPayload, button);
         } else if (button.classList.contains('delete-btn')) {
             e.preventDefault();
             deleteItem(button);

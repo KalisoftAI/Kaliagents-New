@@ -15,3 +15,4 @@ media/
 staticfiles/
 client_secret.json
 secrete.toml
+service-account-key.json

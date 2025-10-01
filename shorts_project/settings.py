@@ -32,7 +32,7 @@ SECRET_KEY = 'django-insecure-!7#(gj$j&nzn-*8$s#8w&$(z@&2t5r(lnk)ek=)vkj!)#o7z-q
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['4c8019eca752.ngrok-free.app', '127.0.0.1']
 
 
 # Application definition
@@ -179,8 +179,22 @@ MEDIA_URL = '/media/'
 # os.makedirs(os.path.join(MEDIA_ROOT, 'temp'), exist_ok=True) # For temporary files during video generation
 
 
-# API Key for Google Gemini
+GOOGLE_OAUTH_CLIENT_ID = os.getenv('GOOGLE_OAUTH_CLIENT_ID')
+GOOGLE_OAUTH_CLIENT_SECRET = os.getenv('GOOGLE_OAUTH_CLIENT_SECRET')
+GOOGLE_OAUTH_REDIRECT_URI = "http://127.0.0.1:8000/youtube/callback/"
+
+# Credentials for Meta/Instagram API
+INSTAGRAM_APP_ID = os.getenv('INSTAGRAM_APP_ID')
+INSTAGRAM_APP_SECRET = os.getenv('INSTAGRAM_APP_SECRET')
+INSTAGRAM_REDIRECT_URI = "http://127.0.0.1:8000/instagram/callback/"
+
+
+GOOGLE_SERVICE_ACCOUNT_KEYFILE = os.path.join(BASE_DIR, 'service-account-key.json')
+GOOGLE_ACCOUNT_EMAIL_TO_IMPERSONATE = 'kalisoft308@gmail.com'
+
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY')
+if not GEMINI_API_KEY:
+    logger.warning("GEMINI_API_KEY is not set in environment variables. AI features will be disabled.")
 
 # ... rest of the settings
 STATIC_ROOT = os.path.join(BASE_DIR, "static/")
