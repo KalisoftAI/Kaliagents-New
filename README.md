@@ -112,7 +112,9 @@ Example configuration:
 | N8N_BASIC_AUTH_USER     | admin                                                                                                          |
 | N8N_BASIC_AUTH_PASSWORD | yourpassword                                                                                                   |
 
-### Optional: Database Configuration
+
+
+### Optional: Database Configuration 
 
 If using PostgreSQL instead of local SQLite:
 
@@ -149,5 +151,100 @@ Then, attach your **Cloud SQL connection** under:
 Once deployed, test:
 
 ```bash
-curl https://clipcraftai-311239505
+curl https://clipcraftai-311239505993.us-central1.run.app
 ```
+
+If deployed correctly, you’ll see the n8n login or a JSON response.
+
+Webhook example:
+
+```
+https://clipcraftai-311239505993.us-central1.run.app/webhook/myagent
+```
+
+Activate workflows in the n8n dashboard and use these endpoints in your automations.
+
+---
+
+## 🧠 (Optional) Use Your Own Domain
+
+Map a custom domain:
+
+```bash
+gcloud run domain-mappings create \
+  --service clipcraftai \
+  --domain api.yourdomain.com
+```
+
+---
+
+## 🧰 Troubleshooting Guide
+
+| Problem                               | Fix                                                                     |
+| ------------------------------------- | ----------------------------------------------------------------------- |
+| **PORT environment variable not set** | Cloud Run automatically sets `$PORT`; ensure your Docker `CMD` uses it. |
+| **App crashes**                       | View logs: `gcloud logs read --project=$PROJECT_ID --limit=50`          |
+| **Webhook not responding**            | Ensure workflow is **active** and HTTP method (GET/POST) matches.       |
+
+---
+
+## 💰 Step 8: Cost Overview (Monthly Estimate)
+
+| Component               | Description                    | Est. Monthly Cost |
+| ----------------------- | ------------------------------ | ----------------- |
+| Cloud Run (n8n service) | Main running app               | $0 – $5           |
+| Artifact Registry       | Stores Docker images           | $0 – $1           |
+| Cloud SQL (Postgres)    | Optional persistence           | $8 – $25          |
+| Cloud Storage           | Optional workflow file storage | $0 – $1           |
+| Cloud Logging           | Logs storage                   | $0 – $2           |
+
+
+### 8.1. Cloud Run Pricing (Core)
+
+Cloud Run pricing depends on:
+
+vCPU and memory used
+
+Request count
+
+Execution time
+
+| Resource             | Free Tier                  | Price beyond free           |
+| -------------------- | -------------------------- | --------------------------- |
+| vCPU                 | 180,000 vCPU-seconds/month | $0.00002400 per vCPU-second |
+| Memory               | 360,000 GiB-seconds/month  | $0.00000250 per GiB-second  |
+| Requests             | 2 million/month            | $0.40 per million requests  |
+| Egress (to Internet) | 1 GiB/month                | $0.12 per GiB after that    |
+
+
+### ✅ **Total (Small Workload): $5–$15/month**
+
+Ideal for 1–2 users and light automation workflows.
+
+---
+
+## 🧩 Summary
+
+You’ve successfully:
+
+1. Set up Google Cloud Shell
+2. Built and pushed an n8n Docker image
+3. Deployed to Cloud Run
+4. Configured authentication and environment variables
+5. Optionally added persistent storage (Cloud SQL)
+6. Deployed a secure, scalable automation agent space on **Google Cloud**
+
+---
+
+### 🔗 Useful Links
+
+* [n8n Documentation](https://docs.n8n.io/)
+* [Google Cloud Run Docs](https://cloud.google.com/run/docs)
+* [Artifact Registry Docs](https://cloud.google.com/artifact-registry/docs)
+* [Cloud SQL for PostgreSQL](https://cloud.google.com/sql/docs/postgres)
+
+---
+
+**Author:** Kalisoft
+**Project:** ClipCraft AI — Intelligent Automation & Agent Deployment
+**Cloud Provider:** Google Cloud (Cloud Run + Artifact Registry + Cloud SQL)
