@@ -1,169 +1,337 @@
-# Kaliagents-New
+Perfect 🔥 — below is a **complete, production-grade `README.md`** you can put in your GitHub repo.
 
-# Deploying n8n on Google Cloud Run with Cloud SQL PostgreSQL
+It documents **everything**:
+✅ setup
+✅ Cloud Run deployment
+✅ connecting n8n agents
+✅ website integration
+✅ cost breakdown
 
-This guide provides specific steps to deploy n8n on Google Cloud Run with persistent storage using Cloud SQL PostgreSQL and proper port handling.
+This README assumes your Cloud Run service will live at
+`https://clipcraftai-311239505993.us-central1.run.app`
+and your project ID is `sacred-machine-474009-q2`.
 
------
+---
 
-## Step 1: Prepare Your Google Cloud Project
+```markdown
+# 🚀 n8n Cloud Run Deployment — AI Agent Automation Platform
 
-1.  **Create or Select Project:** Create a new Google Cloud project or select an existing one.
+This guide explains **how to deploy n8n (or AI agent backend)** on **Google Cloud Run**  
+with full setup, cost estimates, and website integration instructions.
 
-2.  **Enable APIs:** Enable the **Cloud Run**, **Cloud SQL Admin**, and **Artifact Registry APIs**.
+---
 
-3.  **Set Project and Region:** Configure your project and region for future commands:
+## 📋 Overview
 
-    ```bash
-    gcloud config set project YOUR_PROJECT_ID
-    gcloud config set run/region YOUR_REGION
-    ```
+You will deploy an **n8n-based AI agent system** that can:
+- Run custom automation workflows
+- Connect to OpenAI or any API
+- Trigger from your website via webhooks
+- Scale automatically with usage (Cloud Run)
 
------
-
-## Step 2: Create Custom Dockerfiles to Handle Port Mapping
-
-Cloud Run expects the application to use the port set in the environment variable `PORT`, but n8n uses `N8N_PORT`. Create two files in your working directory:
-
-### `startup.sh`
-
-```bash
-#!/bin/sh
-if [ -n "$PORT" ]; then
-  export N8N_PORT=$PORT
-fi
-exec /docker-entrypoint.sh
+Example deployed endpoint:
 ```
 
-**Permissions:** Make sure it has Unix line endings and execute permissions:
+[https://clipcraftai-311239505993.us-central1.run.app](https://clipcraftai-311239505993.us-central1.run.app)
+
+````
+
+---
+
+## 🧩 Prerequisites
+
+Before you begin, make sure you have:
+- A **Google Cloud project** (e.g. `sacred-machine-474009-q2`)
+- **Billing enabled**
+- **Cloud Shell** or local **gcloud CLI**
+- Basic knowledge of Docker
+
+---
+
+## ⚙️ 1. Setup Environment
+
+Open **Google Cloud Shell** or your local terminal.
 
 ```bash
-chmod +x startup.sh
+# Configure your project and region
+gcloud config set project sacred-machine-474009-q2
+export REGION=us-central1
+export PROJECT_ID=sacred-machine-474009-q2
+export IMAGE_NAME=clipcraftai
+````
+
+Enable required APIs:
+
+```bash
+gcloud services enable run.googleapis.com \
+    artifactregistry.googleapis.com \
+    cloudbuild.googleapis.com
 ```
 
-### `Dockerfile`
+---
 
-```dockerfile
-FROM docker.n8n.io/n8nio/n8n:latest
-COPY startup.sh /
-USER root
-RUN chmod +x /startup.sh
-USER node
+## 🐳 2. Create a Dockerfile
+
+If you are deploying **n8n**, use this minimal `Dockerfile`:
+
+```Dockerfile
+# Dockerfile
+FROM n8nio/n8n:latest
+
+# Expose Cloud Run port
 EXPOSE 5678
-ENTRYPOINT ["/bin/sh", "/startup.sh"]
 ```
 
------
+If you are deploying your **custom backend** (e.g. Django + yt-dlp),
+adjust this file to fit your app’s `requirements.txt` and `CMD`.
 
-## Step 3: Build and Push Docker Image
+---
 
-1.  **Create Artifact Registry Docker Repository:**
+## 🏗️ 3. Build and Push the Image
 
-    ```bash
-    gcloud artifacts repositories create n8n-repo \
-        --repository-format=docker \
-        --location=$REGION \
-        --description="Repository for n8n images"
-    ```
+Create a Docker Artifact Registry:
 
-2.  **Authenticate Docker with Google Cloud:**
+```bash
+gcloud artifacts repositories create n8n-repo \
+  --repository-format=docker \
+  --location=$REGION
+```
 
-    ```bash
-    gcloud auth configure-docker $REGION-docker.pkg.dev
-    ```
+Build and push:
 
-3.  **Build the Docker Image:** Build for the correct architecture (`linux/amd64`):
+```bash
+gcloud builds submit --tag $REGION-docker.pkg.dev/$PROJECT_ID/n8n-repo/$IMAGE_NAME
+```
 
-    ```bash
-    docker build --platform linux/amd64 -t $REGION-docker.pkg.dev/$PROJECT_ID/n8n-repo/n8n:latest .
-    ```
+---
 
-4.  **Push the Image:**
+## ☁️ 4. Deploy to Cloud Run
 
-    ```bash
-    docker push $REGION-docker.pkg.dev/$PROJECT_ID/n8n-repo/n8n:latest
-    ```
+```bash
+gcloud run deploy clipcraftai \
+  --image $REGION-docker.pkg.dev/$PROJECT_ID/n8n-repo/$IMAGE_NAME \
+  --platform managed \
+  --region $REGION \
+  --allow-unauthenticated \
+  --memory 1Gi \
+  --cpu 1 \
+  --port 5678
+```
 
------
+When the deployment finishes, you’ll get:
 
-## Step 4: Set Up Cloud SQL PostgreSQL Database
+```
+Service URL: https://clipcraftai-311239505993.us-central1.run.app
+```
 
-1.  **Create a Cloud SQL Instance:**
+---
 
-    ```bash
-    gcloud sql instances create n8n-db \
-        --database-version=POSTGRES_13 \
-        --tier=db-f1-micro \
-        --region=$REGION \
-        --storage-size=10GB \
-        --root-password="supersecure-rootpassword"
-    ```
+## 🔧 5. Configure Environment Variables
 
-2.  **Create Database and User for n8n:**
+In Google Cloud Console → Cloud Run → **Edit & Deploy New Revision** → **Environment variables**, add:
 
-    ```bash
-    gcloud sql databases create n8n --instance=n8n-db
-    gcloud sql users create n8n-user --instance=n8n-db --password="supersecure-userpassword"
-    ```
+| Variable                  | Example                                                 | Description                    |
+| ------------------------- | ------------------------------------------------------- | ------------------------------ |
+| `WEBHOOK_URL`             | `https://clipcraftai-311239505993.us-central1.run.app/` | Public endpoint                |
+| `N8N_ENCRYPTION_KEY`      | `longrandomstring`                                      | Encryption key for credentials |
+| `GENERIC_TIMEZONE`        | `Asia/Kolkata`                                          | Your timezone                  |
+| `N8N_BASIC_AUTH_ACTIVE`   | `true`                                                  | Enable login protection        |
+| `N8N_BASIC_AUTH_USER`     | `admin`                                                 | Username                       |
+| `N8N_BASIC_AUTH_PASSWORD` | `strongpassword`                                        | Password                       |
 
------
+Optional (for persistence):
 
-## Step 5: Deploy n8n to Cloud Run with Database and Secrets
+```bash
+DB_TYPE=postgresdb
+DB_POSTGRESDB_HOST=/cloudsql/myproject:us-central1:n8n-db
+DB_POSTGRESDB_USER=n8n_user
+DB_POSTGRESDB_PASSWORD=supersecret
+DB_POSTGRESDB_DATABASE=n8n
+```
 
-1.  **Get Cloud SQL Connection Name:**
+---
 
-    ```bash
-    export SQL_CONNECTION=$(gcloud sql instances describe n8n-db --format="value(connectionName)")
-    ```
+## 🧠 6. Create and Deploy AI Agents in n8n
 
-2.  **Deploy to Cloud Run:** Deploy your n8n service, linking Cloud SQL, setting environment variables, and enabling basic authentication.
+Once n8n is running:
 
-    ```bash
-    gcloud run deploy n8n \
-      --image=$REGION-docker.pkg.dev/$PROJECT_ID/n8n-repo/n8n:latest \
-      --platform=managed \
-      --region=$REGION \
-      --allow-unauthenticated \
-      --port=5678 \
-      --cpu=1 \
-      --memory=2Gi \
-      --min-instances=0 \
-      --max-instances=1 \
-      --set-env-vars="N8N_PATH=/,N8N_PORT=5678,N8N_PROTOCOL=https,DB_TYPE=postgresdb,DB_POSTGRESDB_DATABASE=n8n,DB_POSTGRESDB_USER=n8n-user,DB_POSTGRESDB_HOST=/cloudsql/$SQL_CONNECTION,DB_POSTGRESDB_PORT=5432,DB_POSTGRESDB_SCHEMA=public,N8N_BASIC_AUTH_USER=admin,N8N_BASIC_AUTH_PASSWORD=yourpassword,EXECUTIONS_PROCESS=main,EXECUTIONS_MODE=regular,GENERIC_TIMEZONE=UTC" \
-      --add-cloudsql-instances=$SQL_CONNECTION \
-      --service-account=n8n-service-account@$PROJECT_ID.iam.gserviceaccount.com
-    ```
+1. Go to your deployed URL and log in.
+2. Create a new **workflow** with a **Webhook Trigger** node.
 
-      * **Important:** Replace `yourpassword` with a strong password for basic authentication.
-      * Ensure the specified `n8n-service-account@YOUR_PROJECT_ID.iam.gserviceaccount.com` has the necessary permissions to connect to the Cloud SQL instance.
+   * Method: `POST`
+   * Path: `ai-agent`
+3. Add nodes like:
 
------
+   * `OpenAI` → for generating text
+   * `HTTP Request` → to fetch APIs
+   * `Google Sheets` / `Slack` → for actions
+4. End with a `Respond to Webhook` node:
 
-## Step 6: Access and Use Your n8n Instance
+   ```json
+   {
+     "status": "success",
+     "response": "AI generated result here..."
+   }
+   ```
+5. Activate the workflow.
 
-After deployment, Cloud Run will provide a **public HTTPS URL**.
-Use this URL to access the n8n UI. Webhooks and executions will be routed correctly with PostgreSQL persistence for your workflows and executions.
+Your webhook endpoint will be:
 
------
+```
+https://clipcraftai-311239505993.us-central1.run.app/webhook/ai-agent
+```
 
-## Notes
+Test:
 
-  * This setup ensures your **workflows and execution data persist** across container restarts.
-  * `min-instances=0` enables your service to **scale-to-zero** when idle, significantly saving costs.
-  * The **custom Dockerfile and startup script resolve the Cloud Run port mismatch problem**.
-  * Consider using **Google Secret Manager** to store sensitive environment variables securely.
-  * Adjust **CPU and memory** based on your expected workload to optimize performance and cost.
-  * This approach offers a **scalable, cost-efficient, and low-maintenance solution** for self-hosting n8n on Google Cloud Run with persistent storage and secure access.
+```bash
+curl -X POST https://clipcraftai-311239505993.us-central1.run.app/webhook/ai-agent \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "AI in video editing"}'
+```
 
------
+---
 
-## Check Sources
+## 💻 7. Integrate Agent on Your Website
 
-  * [https://github.com/datawranglerai/self-host-n8n-on-gcr](https://github.com/datawranglerai/self-host-n8n-on-gcr)
-  * [https://community.n8n.io/t/complete-guide-self-hosting-n8n-on-google-cloud-run-with-postgresql-serverless-cost-effective/195995](https://community.n8n.io/t/complete-guide-self-hosting-n8n-on-google-cloud-run-with-postgresql-serverless-cost-effective/195995)
-  * [https://docs.n8n.io/hosting/installation/server-setups/google-cloud/](https://docs.n8n.io/hosting/installation/server-setups/google-cloud/)
-  * [https://www.oneclickitsolution.com/centerofexcellence/aiml/n8n-setup-on-gcp-vm](https://www.oneclickitsolution.com/centerofexcellence/aiml/n8n-setup-on-gcp-vm)
-  * [https://www.reddit.com/r/n8n/comments/1jcz1v2/i\_created\_a\_complete\_guide\_to\_selfhosting\_n8n\_on/](https://www.reddit.com/r/n8n/comments/1jcz1v2/i_created_a_complete_guide_to_selfhosting_n8n_on/)
-  * [https://www.youtube.com/watch?v=NNTbwOCPUww](https://www.youtube.com/watch?v=NNTbwOCPUww)
-  * [https://community.n8n.io/t/cloud-run-configuration-of-n8n/59644](https://community.n8n.io/t/cloud-run-configuration-of-n8n/59644)
-  * [https://www.youtube.com/watch?v=x49ZiJDIVPQ](https://www.youtube.com/watch?v=x49ZiJDIVPQ)
+Example HTML + JavaScript snippet:
+
+```html
+<form id="aiForm">
+  <input id="userInput" placeholder="Enter a topic..." />
+  <button type="submit">Generate</button>
+</form>
+<div id="result"></div>
+
+<script>
+  document.getElementById('aiForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const topic = document.getElementById('userInput').value;
+    const res = await fetch('https://clipcraftai-311239505993.us-central1.run.app/webhook/ai-agent', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic })
+    });
+    const data = await res.json();
+    document.getElementById('result').innerText = data.response;
+  });
+</script>
+```
+
+✅ This allows users to interact with your n8n agent directly from your website.
+
+---
+
+## 🔐 8. Security Best Practices
+
+* Use **Basic Auth** or API key headers in webhook validation:
+
+  ```js
+  $json.headers['x-api-key'] === 'your-secret-key'
+  ```
+* Restrict credentials visibility in n8n UI.
+* Avoid exposing sensitive nodes publicly.
+
+---
+
+## 💰 9. Cost Breakdown
+
+| Component                    | Free Tier                                | Approx. Monthly Cost | Notes               |
+| ---------------------------- | ---------------------------------------- | -------------------- | ------------------- |
+| **Cloud Run (n8n)**          | 2M requests, 180k vCPU-sec, 360k GiB-sec | **$0 – $5**          | Scales to zero      |
+| **Artifact Registry**        | 0.5 GB                                   | **$0 – $1**          | Stores Docker image |
+| **Cloud SQL (optional)**     | –                                        | **$8 – $25**         | Persistent DB       |
+| **Cloud Storage (optional)** | 5 GB                                     | **$0 – $1**          | File storage        |
+| **Cloud Logging**            | 50 GB                                    | **$0 – $2**          | Usage-based         |
+| **TOTAL**                    |                                          | **$0 – $30/month**   | Typical range       |
+
+### 💡 Example Scenarios
+
+| Use Case              | Description             | Total Est.     |
+| --------------------- | ----------------------- | -------------- |
+| Personal Testing      | 1 user, light use       | **Free**       |
+| Team Agent (SQLite)   | 3 users                 | **$3–$5/mo**   |
+| Persistent Production | Cloud SQL + 10K req/day | **$15–$25/mo** |
+
+---
+
+## 🧰 10. Monitoring and Maintenance
+
+```bash
+# Check logs
+gcloud logs read --project=$PROJECT_ID --limit=50
+
+# Redeploy with changes
+gcloud run deploy clipcraftai \
+  --image $REGION-docker.pkg.dev/$PROJECT_ID/n8n-repo/$IMAGE_NAME \
+  --region $REGION
+```
+
+---
+
+## 🌐 11. (Optional) Use Custom Domain
+
+```bash
+gcloud run domain-mappings create \
+  --service clipcraftai \
+  --domain api.yourdomain.com
+```
+
+Then configure DNS (CNAME → ghs.googlehosted.com).
+
+---
+
+## 🧱 12. Optional: Use Cloud SQL Alternative
+
+If you want to stay below $5/month:
+
+* Use **SQLite** (default in n8n)
+* Mount **Cloud Storage** as volume for basic persistence
+* Avoid Cloud SQL until you scale
+
+---
+
+## ✅ Final Result
+
+Your deployed service:
+
+```
+https://clipcraftai-311239505993.us-central1.run.app
+```
+
+Example agent webhook:
+
+```
+https://clipcraftai-311239505993.us-central1.run.app/webhook/ai-agent
+```
+
+Example website request:
+
+```bash
+curl -X POST https://clipcraftai-311239505993.us-central1.run.app/webhook/ai-agent \
+  -H "Content-Type: application/json" \
+  -d '{"topic":"AI short video ideas"}'
+```
+
+Response:
+
+```json
+{
+  "status": "success",
+  "response": "Here are 5 short AI video ideas..."
+}
+```
+
+---
+
+## 🧾 License
+
+This project setup is provided for educational and personal use.
+© 2025 ClipCraftAI — All rights reserved.
+
+```
+
+---
+
+Would you like me to **add a ready-to-deploy `cloudbuild.yaml`** (so you can deploy from GitHub with one command: `gcloud builds submit`)?  
+It automates building, pushing, and deploying to Cloud Run in one step.
+```
