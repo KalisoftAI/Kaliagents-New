@@ -8,3 +8,6 @@ qrcode-terminal
 pino
 pino-pretty
 dotenv
+colors
+@whiskeysockets/baileys@latest 
+qrcode
