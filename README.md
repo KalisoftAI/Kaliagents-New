@@ -8,8 +8,9 @@ A powerful WhatsApp bot built with Node.js that provides interactive features th
 - **QR Code Authentication**: Easy login process
 - **Interactive Menus**: Navigate features with ease
 - **Real-time Status**: Monitor bot status and uptime
-- **Message Broadcasting**: Send messages to multiple contacts
+- **Bulk Messaging**: Send messages to multiple contacts at once
 - **Auto-reconnect**: Automatically reconnects if connection is lost
+- **Rate Limit Handling**: Smart delays to prevent account restrictions
 
 ## 📋 Prerequisites
 
@@ -77,14 +78,39 @@ After first authentication, an `auth_info_baileys` folder will be created contai
 - `!time` - Show current server time
 - `!uptime` - Show bot uptime
 
+### Bulk Messaging
+
+Send messages to multiple contacts at once:
+
+1. Prepare a text file (`contacts.txt`) with one phone number per line (include country code, no '+')
+
+   ```
+   919876543210
+   919876543211
+   919876543212
+   ```
+
+2. Run the bulk message script:
+
+   ```bash
+   node bulkMessage.js
+   ```
+
+3. Follow the prompts to:
+   - Enter your message
+   - Provide the path to your contacts file
+   - Scan the QR code when prompted
+   - Type `SEND` to start sending messages
+
 ### Terminal Interface
 
-When you run the bot, you'll see a menu with these options:
+When you run the main bot, you'll see a menu with these options:
 
 1. Show Bot Status
 2. Send Test Message
 3. Get Uptime
-4. Exit
+4. Start Bulk Messaging
+5. Exit
 
 ## 🔧 Troubleshooting
 
@@ -95,8 +121,16 @@ When you run the bot, you'll see a menu with these options:
    - Ensure your phone has an active internet connection
    - Try deleting the `auth_info_baileys` folder and restarting
    - Make sure you're scanning with the same WhatsApp account
+   - If QR code doesn't appear, check your terminal for any error messages
 
-2. **Connection Issues**
+2. **Bulk Messaging Issues**
+
+   - Ensure phone numbers are in international format (without '+')
+   - Check that the contacts file exists and is readable
+   - If messages fail to send, verify the numbers are registered on WhatsApp
+   - The script includes rate limiting - don't modify the delays to avoid restrictions
+
+3. **Connection Issues**
 
    ```bash
    # Clear npm cache
@@ -107,7 +141,7 @@ When you run the bot, you'll see a menu with these options:
    npm install
    ```
 
-3. **Logger Errors**
+4. **Logger Errors**
    If you see "logger.child is not a function":
    ```bash
    npm install pino@latest pino-pretty@latest
