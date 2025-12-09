@@ -6,6 +6,8 @@ node_modules/
 
 # Session data
 auth_info_baileys/
+*.session-journal
+*.session
 
 # Logs
 *.log
