@@ -1,0 +1,16 @@
+{
+  "id": 1765311833599,
+  "name": "testing 3",
+  "message": "hello test3",
+  "contactList": "my_contacts.txt",
+  "status": "sent",
+  "createdAt": "2025-12-09T20:23:53.601Z",
+  "stats": {
+    "total": 3,
+    "sent": 3,
+    "delivered": 0,
+    "read": 0,
+    "responses": 0
+  },
+  "completedAt": "2025-12-09T20:23:59.192Z"
+}
